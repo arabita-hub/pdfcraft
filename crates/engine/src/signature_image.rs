@@ -68,6 +68,62 @@ impl Document {
     }
 }
 
+/// Read-only layers for moving or resizing typed text: the page without this text box, and what
+/// the box says. Like [`ImageSignaturePreview`], preparing them never changes the document.
+pub struct TextAnnotationPreview {
+    pub text: String,
+    pub size: f64,
+    pub bold: bool,
+    pub italic: bool,
+    pub color: [f64; 3],
+    page: usize,
+    bytes: Arc<Vec<u8>>,
+    config: pdfcraft_render::RenderConfig,
+}
+
+impl TextAnnotationPreview {
+    /// One background worker; the UI reuses its page texture throughout a gesture.
+    pub fn renderer(&self) -> pdfcraft_render::RenderPool {
+        pdfcraft_render::RenderPool::new(self.bytes.clone(), 1, self.config.clone())
+    }
+
+    pub fn page(&self) -> usize {
+        self.page
+    }
+}
+
+impl Document {
+    /// The preview of an upright text box or typed text (`None` for anything else, a callout, or text
+    /// on a turned page, which keeps the ordinary page view while it is dragged).
+    pub fn text_annotation_preview(&self, page: usize, index: usize) -> Result<Option<TextAnnotationPreview>, String> {
+        guard(|| {
+            let editor = self.editor.as_ref().ok_or("the document can't be read")?;
+            let Some(a) = self.info.annotations.iter().find(|a| a.page == page && a.index == index) else { return Ok(None) };
+            if a.subtype != "FreeText" || a.intent.as_deref() == Some("FreeTextCallout") || a.in_reply_to.is_some() {
+                return Ok(None);
+            }
+            if self.info.pages.get(page).is_none_or(|p| p.rotation != 0) {
+                return Ok(None);
+            }
+            let Some(props) = pdfcraft_annot::props(&editor.cos, page, index) else { return Ok(None) };
+            let (Some(size), Some((bold, italic))) = (props.font_size, props.text_style) else { return Ok(None) };
+            let mut cos = editor.cos.clone();
+            pdfcraft_annot::delete_annotation(&mut cos, page, index).map_err(|e| e.to_string())?;
+            let bytes = Arc::new(pdfcraft_cos::write_incremental(&cos, &pdfcraft_cos::SaveOptions::default()).map_err(|e| e.to_string())?);
+            Ok(Some(TextAnnotationPreview {
+                text: a.contents.clone().unwrap_or_default(),
+                size,
+                bold,
+                italic,
+                color: props.color.unwrap_or([0.0; 3]),
+                page,
+                bytes,
+                config: self.config.clone(),
+            }))
+        })?
+    }
+}
+
 /// The user-space box `width` x `height` points as displayed on a page turned by `rotation` (its
 /// `/Rotate`), with its left edge at `at` (a user-space point) and vertically centred on it. On a
 /// quarter-turned page it is `height` wide and `width` tall in user space. `None` for a non-finite

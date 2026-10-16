@@ -170,6 +170,8 @@ fn rejoin_split_paths(args: Vec<String>, exists: impl Fn(&str) -> bool) -> Vec<S
 fn main() -> eframe::Result {
     // First, so the panic hook and every start-up warning are recorded (`logging`).
     let logger = logging::install();
+    // Editing existing text picks up one line at a time, as Acrobat's editor does.
+    pdfcraft_engine::set_line_editing(true);
     // Last-resort guard (AGENTS.md §4): commands, edits, opens and saves catch panics and report
     // them; this hook logs every panic, caught or not, with a backtrace when RUST_BACKTRACE is set.
     std::panic::set_hook(Box::new(|info| {

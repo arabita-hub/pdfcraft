@@ -2,6 +2,19 @@
 
 use super::*;
 
+static EDIT_BY_LINE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Make [`group_blocks`] (what editing picks up) one block per visual line, as Acrobat's editor
+/// does, instead of per paragraph (the default). Set it once at startup, before any page is read:
+/// blocks are indexed, so changing it while documents are open would shift their indexes.
+pub fn set_line_editing(by_line: bool) {
+    EDIT_BY_LINE.store(by_line, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn line_editing() -> bool {
+    EDIT_BY_LINE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 fn same_plane(a: &TextLine, b: &TextLine) -> bool {
     let at = Matrix(a.origin.tm).then(&Matrix(a.origin.ctm));
     let bt = Matrix(b.origin.tm).then(&Matrix(b.origin.ctm));
@@ -105,8 +118,11 @@ fn group_layout(lines: &[TextLine], mixed: bool) -> Vec<TextBlock> {
             let tol = prev.size.max(first.size).max(1.0);
             let aligned =
                 (pr[0] - frame[0]).abs() < tol || ((pr[0] + pr[2] - frame[0] - frame[2]) / 2.0).abs() < tol || (pr[2] - frame[2]).abs() < tol;
+            // Editing works line by line, as Acrobat's does: each visual line is its own block, so
+            // changing a few lines doesn't pick up (and rewrap) the whole paragraph. Reading
+            // blocks still join lines into paragraphs.
             // OCR lines stay apart: the scan fixes where each one is, so they never rewrap together.
-            (!mixed || !(invisible(prev) || invisible(first)))
+            (!mixed || (!line_editing() && !(invisible(prev) || invisible(first))))
                 && (mixed || same_style(prev, first))
                 && same_plane(prev, first)
                 && aligned

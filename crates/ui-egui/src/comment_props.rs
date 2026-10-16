@@ -150,6 +150,11 @@ pub fn edits(d: &PropsDraft) -> Vec<Edit> {
     {
         out.push(Edit::FontSizeAnnotation { page: d.page, index: d.index, size });
     }
+    if e.restylable
+        && let Some((bold, italic)) = e.text_style.filter(|s| Some(*s) != o.text_style)
+    {
+        out.push(Edit::TextStyleAnnotation { page: d.page, index: d.index, bold, italic });
+    }
     let author = (e.author != o.author).then(|| e.author.clone());
     let subject = (e.subject != o.subject).then(|| e.subject.clone());
     let icon = (e.icon != o.icon).then_some(e.icon).flatten();
@@ -232,6 +237,14 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> (boo
                     if let Some(size) = e.font_size.as_mut() {
                         ui.label(tl!("Font size"));
                         ui.add(egui::DragValue::new(size).range(1.0..=400.0).speed(0.5).suffix(" pt"));
+                        ui.end_row();
+                    }
+                    if let Some((bold, italic)) = e.text_style.as_mut() {
+                        ui.label(tl!("Style"));
+                        ui.horizontal(|ui| {
+                            ui.add(widgets::checkbox(bold, tl!("Bold")));
+                            ui.add(widgets::checkbox(italic, tl!("Italic")));
+                        });
                         ui.end_row();
                     }
                     ui.label(tl!("Opacity"));

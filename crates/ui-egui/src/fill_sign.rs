@@ -404,7 +404,39 @@ pub struct TypeBox {
     pub at: [f64; 2],
     pub text: String,
     pub size: f64,
+    pub bold: bool,
+    pub italic: bool,
+    pub color: [f64; 3],
     pub focus: bool,
+}
+
+/// How typed Fill & Sign text looks: the toolbar's size, bold, italic and colour.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextFormat {
+    pub size: f64,
+    pub bold: bool,
+    pub italic: bool,
+    pub color: [f64; 3],
+}
+
+impl TextFormat {
+    pub const BLACK: [f64; 3] = [0.0; 3];
+
+    /// The default look at `size`: regular black.
+    pub fn plain(size: f64) -> Self {
+        Self { size, bold: false, italic: false, color: Self::BLACK }
+    }
+
+    fn open_box(self, page: usize, at: [f64; 2]) -> TypeBox {
+        TypeBox { page, at, text: String::new(), size: self.size, bold: self.bold, italic: self.italic, color: self.color, focus: true }
+    }
+}
+
+impl TypeBox {
+    fn commit(&self, info: &DocInfo, author: &str) -> Edit {
+        let fmt = TextFormat { size: self.size, bold: self.bold, italic: self.italic, color: self.color };
+        typed_as(self.page, self.at, self.text.trim(), fmt, crate::comments::page_rotation(info, self.page), author)
+    }
 }
 
 /// The default size Fill & Sign uses for typed text.
@@ -414,6 +446,21 @@ pub const MAX_TEXT_SIZE: f64 = 300.0;
 
 pub fn valid_text_size(size: f64) -> Option<f64> {
     (size.is_finite() && (MIN_TEXT_SIZE..=MAX_TEXT_SIZE).contains(&size)).then_some(size)
+}
+
+/// The sizes the − / + buttons step through, like a word processor's size list.
+const TEXT_SIZE_STEPS: [f64; 20] =
+    [4.0, 6.0, 8.0, 9.0, 10.0, 11.0, 12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 28.0, 36.0, 48.0, 72.0, 96.0, 144.0, 200.0, 300.0];
+
+/// The next larger (`up`) or smaller typed-text size after `size`, staying within the allowed range.
+pub fn step_text_size(size: f64, up: bool) -> f64 {
+    let size = valid_text_size(size).unwrap_or(TEXT_SIZE);
+    let next = if up {
+        TEXT_SIZE_STEPS.iter().copied().find(|s| *s > size + 1e-6)
+    } else {
+        TEXT_SIZE_STEPS.iter().rev().copied().find(|s| *s < size - 1e-6)
+    };
+    next.unwrap_or(size).clamp(MIN_TEXT_SIZE, MAX_TEXT_SIZE)
 }
 
 fn to_user(xf: &PageXform, info: &DocInfo, page: usize, p: Pos2) -> [f64; 2] {
@@ -430,8 +477,15 @@ fn new(page: usize, shape: Shape, contents: String, author: &str) -> Edit {
 /// A typewriter annotation sized to its text, its displayed top-left at `at` on a page turned by
 /// `rotation` (its `/Rotate`).
 pub fn typed(page: usize, at: [f64; 2], text: &str, size: f64, rotation: i64, author: &str) -> Edit {
-    let rect = crate::comments::text_box_rect(at, text, size, rotation);
-    new(page, Shape::Typewriter { rect, font_size: size }, text.to_string(), author)
+    typed_as(page, at, text, TextFormat::plain(size), rotation, author)
+}
+
+/// [`typed`] in the given size, weight, slant and colour.
+pub fn typed_as(page: usize, at: [f64; 2], text: &str, fmt: TextFormat, rotation: i64, author: &str) -> Edit {
+    let rect = crate::comments::text_box_rect_weighted(at, text, fmt.size, fmt.bold, rotation);
+    let shape = Shape::Typewriter { rect, font_size: fmt.size, bold: fmt.bold, italic: fmt.italic };
+    let style = Style { color: fmt.color, ..Style::default_for(&shape) };
+    Edit::AddAnnotation(NewAnnotation { page, shape, style, contents: text.to_string(), author: author.to_string() })
 }
 
 /// Place a saved signature (strokes normalised to a 0–1 box, y up) with its left edge at `at`,
@@ -619,7 +673,7 @@ pub(crate) fn page_input(
     page: usize,
     info: &DocInfo,
     tool: FillTool,
-    text_size: f64,
+    format: TextFormat,
     view: &mut DocView,
     signature: Option<&SavedSig>,
     initials: Option<&SavedSig>,
@@ -652,18 +706,17 @@ pub(crate) fn page_input(
     }
     // Typed text starts a little above the click, as displayed.
     let rotation = i64::from(p.rotation);
+    let text_size = format.size;
     let top = pdfcraft_engine::displayed_offset(rotation, at, 0.0, text_size * 0.6);
     match tool {
         FillTool::Text => {
             // Clicking away from an open box commits it: the page sees this click before the box
             // sees its lost focus, so replacing the box first would drop what was typed.
-            let open = view.fill_text.replace(TypeBox { page, at: top, text: String::new(), size: text_size, focus: true });
-            open.filter(|tb| !tb.text.trim().is_empty()).map(|tb| {
-                FillAction::Edit(Box::new(typed(tb.page, tb.at, tb.text.trim(), tb.size, crate::comments::page_rotation(info, tb.page), author)))
-            })
+            let open = view.fill_text.replace(format.open_box(page, top));
+            open.filter(|tb| !tb.text.trim().is_empty()).map(|tb| FillAction::Edit(Box::new(tb.commit(info, author))))
         }
         FillTool::Date => Some(match date_text {
-            Ok(text) => FillAction::Edit(Box::new(typed(page, top, text, text_size, rotation, author))),
+            Ok(text) => FillAction::Edit(Box::new(typed_as(page, top, text, format, rotation, author))),
             Err(why) => FillAction::Refused(why.clone()),
         }),
         FillTool::Signature => match signature {
@@ -697,6 +750,73 @@ pub enum FillAction {
     Refused(String),
 }
 
+/// The toolbar's text controls: size (− / + and a field), bold, italic and colour. Changes apply to
+/// the box being typed in and to a selected Fill & Sign text, and set how the next text looks.
+pub(crate) fn format_bar(ui: &mut egui::Ui, app: &mut crate::PdfCraftApp) {
+    let before = (app.fill_text_size, app.fill_text_bold, app.fill_text_italic, app.fill_text_color);
+    ui.label(tl!("Font size:"));
+    if ui.button("\u{2212}").on_hover_text(tl!("Decrease font size")).clicked() {
+        app.fill_text_size = step_text_size(app.fill_text_size, false);
+    }
+    ui.add(egui::DragValue::new(&mut app.fill_text_size).range(MIN_TEXT_SIZE..=MAX_TEXT_SIZE).speed(0.25).suffix(" pt"));
+    if ui.button("+").on_hover_text(tl!("Increase font size")).clicked() {
+        app.fill_text_size = step_text_size(app.fill_text_size, true);
+    }
+    if ui.selectable_label(app.fill_text_bold, egui::RichText::new("B").strong()).on_hover_text(tl!("Bold")).clicked() {
+        app.fill_text_bold = !app.fill_text_bold;
+    }
+    if ui.selectable_label(app.fill_text_italic, egui::RichText::new("I").italics()).on_hover_text(tl!("Italic")).clicked() {
+        app.fill_text_italic = !app.fill_text_italic;
+    }
+    let [r, g, b] = app.fill_text_color.map(|x| (x.clamp(0.0, 1.0) * 255.0).round() as u8);
+    ui.menu_button(egui::RichText::new("A").strong().underline().color(Color32::from_rgb(r, g, b)), |ui| {
+        if let Some(c) = crate::comments::swatch_grid(ui, Some(app.fill_text_color)) {
+            app.fill_text_color = c;
+            ui.close();
+        }
+    })
+    .response
+    .on_hover_text(tl!("Text colour"));
+    let after = (app.fill_text_size, app.fill_text_bold, app.fill_text_italic, app.fill_text_color);
+    if after != before {
+        apply_format(app, before, after);
+    }
+}
+
+type FormatState = (f64, bool, bool, [f64; 3]);
+
+/// Carry a toolbar change over to the open type box and to a selected typed-text annotation.
+fn apply_format(app: &mut crate::PdfCraftApp, before: FormatState, after: FormatState) {
+    let Some((index, id)) = app.active_ids() else { return };
+    let Some(view) = app.views.get_mut(index) else { return };
+    if let Some(tb) = view.fill_text.as_mut() {
+        (tb.size, tb.bold, tb.italic, tb.color) = after;
+    }
+    let Some((page, annotation)) = view.comments.selected else { return };
+    let Some(doc) = app.session.get(id) else { return };
+    let selected_text = doc.allows_annotation()
+        && doc.info.annotations.iter().any(|a| a.page == page && a.index == annotation && a.subtype == "FreeText" && a.fill_sign && !a.locked);
+    let Some((was_bold, was_italic)) = doc.comment_props(page, annotation).and_then(|p| p.text_style).filter(|_| selected_text) else {
+        return;
+    };
+    let mut edits = Vec::new();
+    if after.0 != before.0 {
+        edits.push(Edit::FontSizeAnnotation { page, index: annotation, size: after.0 });
+    }
+    if (after.1, after.2) != (before.1, before.2) && (after.1, after.2) != (was_bold, was_italic) {
+        edits.push(Edit::TextStyleAnnotation { page, index: annotation, bold: after.1, italic: after.2 });
+    }
+    if after.3 != before.3 {
+        edits.push(Edit::StyleAnnotation { page, index: annotation, color: Some(after.3), opacity: None, width: None, endings: None });
+    }
+    let edit = match edits.len() {
+        0 => return,
+        1 => edits.remove(0),
+        _ => Edit::Batch { label: "Format text".into(), edits },
+    };
+    app.apply_edit(edit);
+}
+
 /// The in-place editor for typed text. Returns the edit once committed.
 pub(crate) fn type_box(ctx: &egui::Context, view: &mut DocView, info: &DocInfo, author: &str) -> Option<Edit> {
     let tb = view.fill_text.clone()?;
@@ -710,7 +830,7 @@ pub(crate) fn type_box(ctx: &egui::Context, view: &mut DocView, info: &DocInfo, 
         let Some(t) = view.fill_text.as_mut() else { return };
         // The box is white in every theme, so the caret must not follow the theme (pale in dark mode) (#655).
         ui.visuals_mut().text_cursor.stroke.color = crate::edit_text_ui::caret_color_on(Color32::WHITE);
-        let width = ((t.text.chars().count().max(8) as f32) * t.size as f32 * 0.6 * zoom).clamp(60.0, 600.0);
+        let width = ((t.text.chars().count().max(8) as f32) * t.size as f32 * if t.bold { 0.65 } else { 0.6 } * zoom).clamp(60.0, 600.0);
         // The area's max rect is last frame's size, which caps the edit's width; widen it so the
         // box grows as text is typed.
         ui.set_min_width(width);
@@ -719,7 +839,11 @@ pub(crate) fn type_box(ctx: &egui::Context, view: &mut DocView, info: &DocInfo, 
                 .font(egui::FontId::proportional((t.size as f32 * zoom).max(8.0)))
                 .desired_width(width)
                 .background_color(Color32::from_rgba_unmultiplied(255, 255, 255, 230))
-                .text_color(Color32::BLACK)
+                .text_color(Color32::from_rgb(
+                    (t.color[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+                    (t.color[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+                    (t.color[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+                ))
                 .hint_text(tl!("Type text"))
                 .id_salt("fill-text-edit"),
         );
@@ -740,7 +864,7 @@ pub(crate) fn type_box(ctx: &egui::Context, view: &mut DocView, info: &DocInfo, 
     if commit {
         let tb = view.fill_text.take()?;
         if !tb.text.trim().is_empty() {
-            return Some(typed(tb.page, tb.at, tb.text.trim(), tb.size, crate::comments::page_rotation(info, tb.page), author));
+            return Some(tb.commit(info, author));
         }
     }
     None
@@ -1241,6 +1365,19 @@ impl crate::PdfCraftApp {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn text_size_steps_stay_in_range() {
+        assert_eq!(step_text_size(10.0, true), 11.0);
+        assert_eq!(step_text_size(10.0, false), 9.0);
+        assert_eq!(step_text_size(10.5, true), 11.0);
+        assert_eq!(step_text_size(10.5, false), 10.0);
+        assert_eq!(step_text_size(MIN_TEXT_SIZE, false), MIN_TEXT_SIZE);
+        assert_eq!(step_text_size(MAX_TEXT_SIZE, true), MAX_TEXT_SIZE);
+        assert_eq!(step_text_size(f64::NAN, true), 11.0);
+    }
+
     #[test]
     fn undo_removes_the_last_stroke_and_skips_empty_ones() {
         let mut d = super::SigDraft { drawing: true, ..Default::default() };

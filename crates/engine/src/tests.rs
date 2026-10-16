@@ -208,7 +208,7 @@ fn typed_text_reads_across_as_displayed_on_rotated_pages() {
         let at = info.view_to_user(40.0, 60.0);
         let at = [f64::from(at[0]), f64::from(at[1])];
         let rect = text_box_at(degrees, at, 120.0, 2.0 * 12.0 * 1.2 + 6.0).unwrap();
-        let shape = Shape::Typewriter { rect, font_size: 12.0 };
+        let shape = Shape::Typewriter { rect, font_size: 12.0, bold: false, italic: false };
         let style = Style::default_for(&shape);
         session
             .apply(
@@ -2337,7 +2337,7 @@ fn comment_text(s: &Session, id: DocId) -> Vec<String> {
 #[test]
 fn flattening_fill_and_sign_keeps_other_comments_fields_and_undoes() {
     let (mut s, id) = session_with(1);
-    s.apply(id, fill_item(Shape::Typewriter { rect: [20.0, 200.0, 120.0, 220.0], font_size: 10.0 }, "Hello")).unwrap();
+    s.apply(id, fill_item(Shape::Typewriter { rect: [20.0, 200.0, 120.0, 220.0], font_size: 10.0, bold: false, italic: false }, "Hello")).unwrap();
     s.apply(id, fill_item(Shape::Mark { rect: [140.0, 200.0, 160.0, 220.0], mark: FillMark::Check }, "")).unwrap();
     s.apply(id, fill_item(Shape::Signature { strokes: vec![vec![[10.0, 40.0], [40.0, 70.0], [70.0, 40.0]]] }, "")).unwrap();
     s.apply(id, fill_item(Shape::TypedSignature { rect: [90.0, 40.0, 150.0, 70.0], contours: vec![vec![[0.1, 0.2], [0.5, 0.9], [0.9, 0.2]]] }, ""))
@@ -2391,7 +2391,7 @@ fn flattening_fill_and_sign_does_nothing_when_there_are_none() {
 #[test]
 fn flattening_fill_and_sign_is_refused_without_permission_to_change() {
     let (mut s, id) = session_with(1);
-    s.apply(id, fill_item(Shape::Typewriter { rect: [20.0, 200.0, 120.0, 220.0], font_size: 10.0 }, "Hello")).unwrap();
+    s.apply(id, fill_item(Shape::Typewriter { rect: [20.0, 200.0, 120.0, 220.0], font_size: 10.0, bold: false, italic: false }, "Hello")).unwrap();
     let p = Protection { printing: Printing::Low, changes: Changes::CommentFillSign, copy: false, ..protection(None, Some("boss")) };
     s.apply(id, Edit::Protect(p)).unwrap();
     let saved = s.save_bytes(id).unwrap();
@@ -2413,7 +2413,7 @@ fn flattening_fill_and_sign_on_a_signed_file_stays_incremental() {
     let opts = SignOptions { page: 0, rect: Some([20.0, 20.0, 160.0, 50.0]), ..SignOptions::default() };
     let signed = s.sign(id, &digital_id, opts).unwrap();
     s.mark_signed(id, signed.clone(), None).unwrap();
-    s.apply(id, fill_item(Shape::Typewriter { rect: [20.0, 200.0, 120.0, 220.0], font_size: 10.0 }, "Hello")).unwrap();
+    s.apply(id, fill_item(Shape::Typewriter { rect: [20.0, 200.0, 120.0, 220.0], font_size: 10.0, bold: false, italic: false }, "Hello")).unwrap();
     s.apply(id, Edit::FlattenFillSign).unwrap();
     let saved = s.save_bytes(id).unwrap();
     assert!(saved.starts_with(signed.as_ref()), "the signature's bytes stay an incremental update");
@@ -2423,7 +2423,7 @@ fn flattening_fill_and_sign_on_a_signed_file_stays_incremental() {
 #[test]
 fn flattening_fill_and_sign_reopens_an_encrypted_file() {
     let (mut s, id) = session_with(1);
-    s.apply(id, fill_item(Shape::Typewriter { rect: [20.0, 200.0, 120.0, 220.0], font_size: 10.0 }, "Hello")).unwrap();
+    s.apply(id, fill_item(Shape::Typewriter { rect: [20.0, 200.0, 120.0, 220.0], font_size: 10.0, bold: false, italic: false }, "Hello")).unwrap();
     s.apply(id, Edit::Protect(protection(Some("secret"), None))).unwrap();
     s.apply(id, Edit::FlattenFillSign).unwrap();
     let saved = s.save_bytes(id).unwrap();

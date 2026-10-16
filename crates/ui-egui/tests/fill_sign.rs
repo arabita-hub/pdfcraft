@@ -995,7 +995,8 @@ fn saving_flattens_fill_and_sign_only_when_the_preference_is_on() {
     app.open_bytes("form.pdf", None, FIXTURE.to_vec()).unwrap();
     let id = app.views[0].id;
     app.session.apply(id, mark).unwrap();
-    app.views[0].fill_text = Some(TypeBox { page: 0, at: [40.0, 200.0], text: "Typed".into(), size: 10.0, focus: false });
+    app.views[0].fill_text =
+        Some(TypeBox { page: 0, at: [40.0, 200.0], text: "Typed".into(), size: 10.0, bold: false, italic: false, color: [0.0; 3], focus: false });
     let kept = dir.join("kept.pdf");
     app.save_override = Some(kept.to_string_lossy().into_owned());
     assert!(app.save_active(SaveTarget::InPlace));
@@ -1006,7 +1007,8 @@ fn saving_flattens_fill_and_sign_only_when_the_preference_is_on() {
     assert!(texts.iter().any(|t| t == "Typed"), "an open type box is saved: {texts:?}");
     assert_eq!(reopened.session.get(reopened.views[0].id).unwrap().info.annotations.len(), 2, "the check mark stays too");
 
-    app.views[0].fill_text = Some(TypeBox { page: 0, at: [40.0, 160.0], text: "More".into(), size: 10.0, focus: false });
+    app.views[0].fill_text =
+        Some(TypeBox { page: 0, at: [40.0, 160.0], text: "More".into(), size: 10.0, bold: false, italic: false, color: [0.0; 3], focus: false });
     app.flatten_fill_sign_on_save = true;
     let flat = dir.join("flat.pdf");
     app.save_override = Some(flat.to_string_lossy().into_owned());

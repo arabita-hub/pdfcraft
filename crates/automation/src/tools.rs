@@ -779,7 +779,7 @@ pub fn tools() -> Vec<ToolDef> {
                 json!({ "doc": doc(), "sort": { "type": "string", "enum": ["page", "author", "date", "type"] }, "out": save_out, "open": open }),
                 &["doc"],
             )),
-        t("comment_edit", "Edit a comment", "Change a comment's text, colour, opacity, line width, font size (text box/typewriter/callout), fill (rectangle/oval/polygon; \"none\" removes it), rectangle (rectangle/oval/text box/stamp) or position (`move` [dx, dy] in points). Stamps keep their original appearance when resized. One undo step.").with(schema(
+        t("comment_edit", "Edit a comment", "Change a comment's text, colour, opacity, line width, font size and bold/italic (text box/typewriter/callout), fill (rectangle/oval/polygon; \"none\" removes it), rectangle (rectangle/oval/text box/stamp) or position (`move` [dx, dy] in points). Stamps keep their original appearance when resized. One undo step.").with(schema(
             comment_ref(json!({
                 "contents": { "type": "string" },
                 "color": color(),
@@ -787,6 +787,8 @@ pub fn tools() -> Vec<ToolDef> {
                 "width": { "type": "number", "minimum": 0 },
                 "fill": { "type": "string", "description": "Interior colour of a rectangle, oval or polygon: #RRGGBB, a colour name, or \"none\" for no fill." },
                 "font_size": { "type": "number", "minimum": 1, "maximum": 400, "description": "Font size in points of a text box, typewriter text or callout; the box grows to hold the text." },
+                "bold": { "type": "boolean", "description": "Make a text box, typewriter text or callout bold (or not); the other of bold/italic keeps its current setting." },
+                "italic": { "type": "boolean", "description": "Make a text box, typewriter text or callout italic (or not)." },
                 "rect": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
                 "move": point(),
             })),
@@ -1173,6 +1175,8 @@ pub fn tools() -> Vec<ToolDef> {
                 "at": point(),
                 "text": { "type": "string", "minLength": 1 },
                 "font_size": { "type": "number", "minimum": 4, "maximum": 300, "description": "For type text or date (default 10 pt)." },
+                "bold": { "type": "boolean", "description": "For type text or date: bold (default false)." },
+                "italic": { "type": "boolean", "description": "For type text or date: italic (default false)." },
                 "path": { "type": "string", "description": "PNG or JPEG for signature/initials; pass either path or text." },
                 "scan": { "type": "boolean", "description": "With path: scan a photo of a signature on paper (default false)." },
                 "sensitivity": { "type": "integer", "minimum": 0, "maximum": 100, "description": "With scan: how faint ink may be, 0–100 (default 50)." },

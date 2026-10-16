@@ -481,6 +481,10 @@ impl Automation {
         if requested_size.is_some() && !matches!(kind, "text" | "date") {
             return Err(ToolError::InvalidArgs("font_size is only for type text or date".into()));
         }
+        let (bold, italic) = (a.opt_bool("bold")?.unwrap_or(false), a.opt_bool("italic")?.unwrap_or(false));
+        if (bold || italic) && !matches!(kind, "text" | "date") {
+            return Err(ToolError::InvalidArgs("bold and italic are only for type text or date".into()));
+        }
         let size = requested_size.unwrap_or(10.0);
         if !(4.0..=300.0).contains(&size) {
             return Err(ToolError::InvalidArgs("font_size must be 4–300 pt".into()));
@@ -509,10 +513,10 @@ impl Automation {
             return self.apply(a, edit);
         }
         let text_at = |t: &str| {
-            let w = (pdfcraft_engine::annot_text::text_width(t, size) + 8.0).clamp(20.0, 600.0);
+            let w = (pdfcraft_engine::annot_text::text_width(t, size) * if bold { 1.08 } else { 1.0 } + 8.0).clamp(20.0, 600.0);
             let h = size * 1.2 + 6.0;
             let rect = pdfcraft_engine::text_box_at(i64::from(info.rotation), at, w, h).unwrap_or([at[0], at[1] - h, at[0] + w, at[1]]);
-            Shape::Typewriter { rect, font_size: size }
+            Shape::Typewriter { rect, font_size: size, bold, italic }
         };
         let (shape, contents) = match kind {
             "text" => {
@@ -625,6 +629,15 @@ impl Automation {
             }
             edits.push(Edit::FontSizeAnnotation { page, index, size });
         }
+        let (bold, italic) = (a.opt_bool("bold")?, a.opt_bool("italic")?);
+        if bold.is_some() || italic.is_some() {
+            // Only the one given changes; the other keeps the comment's current face.
+            let current = self.doc(a)?.comment_props(page, index).and_then(|p| p.text_style);
+            let Some((was_bold, was_italic)) = current else {
+                return Err(ToolError::InvalidArgs("bold and italic are only for a text box, typewriter text or callout".into()));
+            };
+            edits.push(Edit::TextStyleAnnotation { page, index, bold: bold.unwrap_or(was_bold), italic: italic.unwrap_or(was_italic) });
+        }
         if let Some(r) = a.nums::<4>("rect")? {
             edits.push(Edit::ResizeAnnotation { page, index, rect: rect_to_user(&info, r) });
         }
@@ -633,7 +646,9 @@ impl Automation {
             edits.push(Edit::MoveAnnotation { page, index, dx: d[0] - o[0], dy: d[1] - o[1] });
         }
         if edits.is_empty() {
-            return Err(ToolError::InvalidArgs("nothing to change: pass contents, color, opacity, width, fill, font_size, rect or move".into()));
+            return Err(ToolError::InvalidArgs(
+                "nothing to change: pass contents, color, opacity, width, fill, font_size, bold, italic, rect or move".into(),
+            ));
         }
         let edit = if edits.len() == 1 { edits.remove(0) } else { Edit::Batch { label: "Edit comment".into(), edits } };
         self.apply(a, edit)

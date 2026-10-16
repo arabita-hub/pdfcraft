@@ -495,7 +495,7 @@ fn fill_and_sign_items_are_drawn() {
         let style = Style::default_for(&shape);
         add_annotation(doc, &NewAnnotation { page: 1, shape, style, contents: contents.into(), author: "Ada".into() }, &meta("x")).unwrap()
     };
-    let t = add(&mut doc, Shape::Typewriter { rect: [100.0, 700.0, 200.0, 716.0], font_size: 11.0 }, "Ada Lovelace");
+    let t = add(&mut doc, Shape::Typewriter { rect: [100.0, 700.0, 200.0, 716.0], font_size: 11.0, bold: false, italic: false }, "Ada Lovelace");
     let marks: Vec<usize> = [FillMark::Check, FillMark::Cross, FillMark::Dot, FillMark::Line]
         .into_iter()
         .enumerate()
@@ -1175,7 +1175,7 @@ fn comment_text_the_standard_fonts_cannot_draw_is_kept_and_marked() {
     assert_eq!(text(&list(&doc, 0)[t], b"Contents"), "签名 Ada");
     assert!(ap_content(&doc, &list(&doc, 0)[t]).contains("(?? Ada)"), "{}", ap_content(&doc, &list(&doc, 0)[t]));
     assert_eq!(mark(&doc, t), Some('签'));
-    let typed = Shape::Typewriter { rect: [100.0, 700.0, 200.0, 716.0], font_size: 11.0 };
+    let typed = Shape::Typewriter { rect: [100.0, 700.0, 200.0, 716.0], font_size: 11.0, bold: false, italic: false };
     let f = add_annotation(
         &mut doc,
         &NewAnnotation { page: 0, style: Style::default_for(&typed), shape: typed, contents: "张三".into(), author: "Ada".into() },
@@ -1276,6 +1276,33 @@ fn cached_appearances_are_reused_while_annotations_are_unchanged() {
 
 /// #1908: a text box's font size changes in `/DA` (colour kept), the rich text follows, the box
 /// grows to hold the bigger text but never shrinks, and bad sizes and other subtypes are refused.
+#[test]
+fn bold_and_italic_change_the_da_face_and_survive_size_and_colour_changes() {
+    let mut doc = fixture();
+    let t = add_annotation(
+        &mut doc,
+        &new(0, Shape::Typewriter { rect: [100.0, 680.0, 220.0, 692.0], font_size: 12.0, bold: false, italic: false }),
+        &meta("t"),
+    )
+    .unwrap();
+    set_contents(&mut doc, 0, t, "Name", &meta("")).unwrap();
+    assert_eq!(props(&doc, 0, t).unwrap().text_style, Some((false, false)));
+    set_text_style(&mut doc, 0, t, true, true, &meta("")).unwrap();
+    // A later size or colour change keeps the face.
+    set_font_size(&mut doc, 0, t, 14.0, &meta("")).unwrap();
+    set_style(&mut doc, 0, t, Some([1.0, 0.0, 0.0]), None, None, None, &meta("")).unwrap();
+    let doc = reopen(&doc);
+    let d = &list(&doc, 0)[t];
+    assert_eq!(text(d, b"DA"), "1 0 0 rg /HeBO 14 Tf");
+    assert!(text(d, b"RC").contains("font-weight:bold") && text(d, b"RC").contains("font-style:italic"));
+    assert_eq!(props(&doc, 0, t).unwrap().text_style, Some((true, true)));
+    let mut doc = doc;
+    set_text_style(&mut doc, 0, t, false, true, &meta("")).unwrap();
+    assert_eq!(text(&list(&doc, 0)[t], b"DA"), "1 0 0 rg /HeOb 14 Tf");
+    let note = add_annotation(&mut doc, &new(0, Shape::Note { at: [50.0, 50.0], icon: NoteIcon::Note }), &meta("t")).unwrap();
+    assert!(set_text_style(&mut doc, 0, note, true, false, &meta("")).is_err());
+}
+
 #[test]
 fn text_box_font_size_changes_the_da_and_grows_the_box() {
     let mut doc = fixture();

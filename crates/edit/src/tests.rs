@@ -2603,7 +2603,7 @@ fn fill_sign_flatten_bakes_marks_keeps_other_comments_and_does_not_reuse_pcfl0()
     assert_eq!(flatten(&mut doc, &[0], true, false).unwrap(), 1);
     let kept = xobject(&doc, 0, b"PCFl0").expect("the first flatten's XObject");
 
-    add(&mut doc, Shape::Typewriter { rect: [20.0, 500.0, 140.0, 520.0], font_size: 10.0 }, "Hello");
+    add(&mut doc, Shape::Typewriter { rect: [20.0, 500.0, 140.0, 520.0], font_size: 10.0, bold: false, italic: false }, "Hello");
     doc.update_dict(annot_at(&doc, 0, 0), |d| {
         d.remove(b"PCFillSign");
     })
@@ -2620,7 +2620,7 @@ fn fill_sign_flatten_bakes_marks_keeps_other_comments_and_does_not_reuse_pcfl0()
         d.remove(b"PCFillSign");
     })
     .unwrap();
-    let hidden = add(&mut doc, Shape::Typewriter { rect: [20.0, 600.0, 140.0, 620.0], font_size: 10.0 }, "secret");
+    let hidden = add(&mut doc, Shape::Typewriter { rect: [20.0, 600.0, 140.0, 620.0], font_size: 10.0, bold: false, italic: false }, "secret");
     doc.update_dict(annot_at(&doc, 0, hidden), |d| d.set(b"F".to_vec(), Object::Int(2))).unwrap();
 
     let n = flatten_fill_sign(&mut doc, &[0]).unwrap();

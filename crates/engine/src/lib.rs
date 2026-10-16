@@ -40,7 +40,7 @@ mod upright_image;
 pub mod word_count;
 pub mod xfa;
 
-pub use signature_image::{ImageSignaturePreview, SignatureImage};
+pub use signature_image::{ImageSignaturePreview, SignatureImage, TextAnnotationPreview};
 pub use signature_scan::{PhotoRect, ScanError, SignaturePhoto, Turn};
 pub use text_preview::TextEditPreview;
 
@@ -63,6 +63,7 @@ pub use pdfcraft_forms::{
 };
 
 pub use pdfcraft_a11y as a11y;
+pub use pdfcraft_edit::text::set_line_editing;
 pub use pdfcraft_edit::{BlockStyle, PageImage, RangeStyle, TextBlock, TextLine, first_undrawable};
 pub use pdfcraft_measure as measure;
 pub use pdfcraft_xfa::Report as XfaLayout;
@@ -267,6 +268,7 @@ fn scope_of(edit: &Edit) -> Scope {
         | Edit::StyleAnnotation { .. }
         | Edit::FillAnnotation { .. }
         | Edit::FontSizeAnnotation { .. }
+        | Edit::TextStyleAnnotation { .. }
         | Edit::SetAnnotationInfo { .. } => Scope::Comments,
         Edit::AddLink { .. } | Edit::SetLink { .. } | Edit::DeleteLink { .. } | Edit::RemoveLinks { .. } | Edit::AddLinks { .. } => Scope::Links,
         Edit::SetFieldValue { .. } | Edit::ResetForm { .. } | Edit::SetFieldImage { .. } | Edit::ApplyScriptChanges { .. } => Scope::Form,
@@ -1431,6 +1433,13 @@ pub enum Edit {
         index: usize,
         size: f64,
     },
+    /// Make a text box, typewriter text or callout bold and/or italic.
+    TextStyleAnnotation {
+        page: usize,
+        index: usize,
+        bold: bool,
+        italic: bool,
+    },
     /// Comment properties ▸ General / note icon.
     SetAnnotationInfo {
         page: usize,
@@ -1967,9 +1976,11 @@ impl Edit {
             Edit::LockAnnotation { .. } => Label::of("Unlock comment"),
             Edit::MoveAnnotation { .. } => Label::of("Move comment"),
             Edit::ResizeAnnotation { .. } => Label::of("Resize comment"),
-            Edit::StyleAnnotation { .. } | Edit::FillAnnotation { .. } | Edit::FontSizeAnnotation { .. } | Edit::SetAnnotationInfo { .. } => {
-                Label::of("Change comment properties")
-            }
+            Edit::StyleAnnotation { .. }
+            | Edit::FillAnnotation { .. }
+            | Edit::FontSizeAnnotation { .. }
+            | Edit::TextStyleAnnotation { .. }
+            | Edit::SetAnnotationInfo { .. } => Label::of("Change comment properties"),
             Edit::SetFieldValue { name, .. } => Label::with("Fill in {name}", name.as_str()),
             Edit::SetFieldImage { name, .. } => Label::with("Set the image of {name}", name.as_str()),
             Edit::ResetForm { .. } => Label::of("Clear form"),
@@ -2124,6 +2135,7 @@ fn check_permission(edit: &Edit, p: &pdfcraft_cos::Permissions) -> Result<(), Ed
         | Edit::StyleAnnotation { .. }
         | Edit::FillAnnotation { .. }
         | Edit::FontSizeAnnotation { .. }
+        | Edit::TextStyleAnnotation { .. }
         | Edit::SetAnnotationInfo { .. }
         | Edit::SetMeasurementScale { .. } => {
             if p.annotate() {
@@ -2387,6 +2399,7 @@ fn run_edit(doc: &mut pdfcraft_cos::Document, edit: &Edit, cx: &mut EditCtx) -> 
         }
         Edit::FillAnnotation { page, index, fill } => pdfcraft_annot::set_fill(doc, *page, *index, *fill, &cx.meta())?,
         Edit::FontSizeAnnotation { page, index, size } => pdfcraft_annot::set_font_size(doc, *page, *index, *size, &cx.meta())?,
+        Edit::TextStyleAnnotation { page, index, bold, italic } => pdfcraft_annot::set_text_style(doc, *page, *index, *bold, *italic, &cx.meta())?,
         Edit::SetAnnotationInfo { page, index, author, subject, icon } => {
             pdfcraft_annot::set_info(doc, *page, *index, author.as_deref(), subject.as_deref(), *icon, &cx.meta())?;
         }

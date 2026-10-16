@@ -1202,7 +1202,8 @@ pub(crate) fn paint_page(ui: &egui::Ui, painter: &egui::Painter, cx: &PageCx<'_>
             }
             return paint_gesture(painter, cx, view);
         }
-        if view.signature_drag.contains(page, index) && matches!(cv.gesture, Some(Gesture::Move { page: p, index: i, .. }) if (p, i) == (page, index))
+        if view.signature_drag.contains_image(page, index)
+            && matches!(cv.gesture, Some(Gesture::Move { page: p, index: i, .. }) if (p, i) == (page, index))
         {
             return paint_gesture(painter, cx, view);
         }
@@ -1539,11 +1540,17 @@ pub(crate) fn caret_snap(text: &PageText, vx: f32, vy: f32) -> Option<([f32; 2],
 /// The box for `text` at `size` with its displayed top-left corner at `at`, on a page turned by
 /// `rotation` (its `/Rotate`): on a quarter-turned page it is taller than wide in user space.
 pub fn text_box_rect(at: [f64; 2], text: &str, size: f64, rotation: i64) -> [f64; 4] {
+    text_box_rect_weighted(at, text, size, false, rotation)
+}
+
+/// [`text_box_rect`] for text that may be bold, which runs wider than the regular widths measured.
+pub fn text_box_rect_weighted(at: [f64; 2], text: &str, size: f64, bold: bool, rotation: i64) -> [f64; 4] {
     use pdfcraft_engine::annot_text::{text_width, wrap};
     let pad = 2.0;
-    let longest = text.lines().map(|l| text_width(l, size)).fold(0.0, f64::max);
+    let k = if bold { 1.08 } else { 1.0 };
+    let longest = text.lines().map(|l| text_width(l, size) * k).fold(0.0, f64::max);
     let w = (longest + 2.0 * pad + 4.0).clamp(40.0, 300.0);
-    let lines = wrap(text, size, w - 2.0 * pad).len().max(1);
+    let lines = wrap(text, size * k, w - 2.0 * pad).len().max(1);
     let h = lines as f64 * size * 1.2 + 2.0 * pad + 2.0;
     pdfcraft_engine::text_box_at(rotation, at, w, h).unwrap_or([at[0], at[1] - h, at[0] + w, at[1]])
 }

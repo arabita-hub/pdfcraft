@@ -550,6 +550,10 @@ pub struct PdfCraftApp {
     pub flatten_fill_sign_on_save: bool,
     /// Point size for new Fill & Sign text and dates, kept across launches.
     pub fill_text_size: f64,
+    /// Fill & Sign text: bold, italic and colour (session-only, like a word processor's pending style).
+    pub fill_text_bold: bool,
+    pub fill_text_italic: bool,
+    pub fill_text_color: [f64; 3],
     pub dialog: Option<Dialog>,
     /// How to ask for the latest release (the desktop app sets it; see `updates`).
     pub update_source: Option<updates::UpdateSource>,
@@ -921,6 +925,9 @@ impl PdfCraftApp {
             ui_scale_applied: None,
             flatten_fill_sign_on_save: false,
             fill_text_size: fill_sign::TEXT_SIZE,
+            fill_text_bold: false,
+            fill_text_italic: false,
+            fill_text_color: fill_sign::TextFormat::BLACK,
             dialog: None,
             update_source: None,
             updates: updates::Updates::default(),

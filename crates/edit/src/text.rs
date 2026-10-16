@@ -22,6 +22,7 @@ use crate::EditError;
 
 #[path = "text_regions.rs"]
 mod regions;
+pub use regions::set_line_editing;
 use regions::{group_blocks, rewrite_styled_block};
 
 /// One line of existing text.
