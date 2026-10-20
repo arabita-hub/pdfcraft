@@ -750,71 +750,107 @@ pub enum FillAction {
     Refused(String),
 }
 
-/// The toolbar's text controls: size (− / + and a field), bold, italic and colour. Changes apply to
-/// the box being typed in and to a selected Fill & Sign text, and set how the next text looks.
-pub(crate) fn format_bar(ui: &mut egui::Ui, app: &mut crate::PdfCraftApp) {
-    let before = (app.fill_text_size, app.fill_text_bold, app.fill_text_italic, app.fill_text_color);
-    ui.label(tl!("Font size:"));
-    if ui.button("\u{2212}").on_hover_text(tl!("Decrease font size")).clicked() {
-        app.fill_text_size = step_text_size(app.fill_text_size, false);
-    }
-    ui.add(egui::DragValue::new(&mut app.fill_text_size).range(MIN_TEXT_SIZE..=MAX_TEXT_SIZE).speed(0.25).suffix(" pt"));
-    if ui.button("+").on_hover_text(tl!("Increase font size")).clicked() {
-        app.fill_text_size = step_text_size(app.fill_text_size, true);
-    }
-    if ui.selectable_label(app.fill_text_bold, egui::RichText::new("B").strong()).on_hover_text(tl!("Bold")).clicked() {
-        app.fill_text_bold = !app.fill_text_bold;
-    }
-    if ui.selectable_label(app.fill_text_italic, egui::RichText::new("I").italics()).on_hover_text(tl!("Italic")).clicked() {
-        app.fill_text_italic = !app.fill_text_italic;
-    }
-    let [r, g, b] = app.fill_text_color.map(|x| (x.clamp(0.0, 1.0) * 255.0).round() as u8);
-    ui.menu_button(egui::RichText::new("A").strong().underline().color(Color32::from_rgb(r, g, b)), |ui| {
-        if let Some(c) = crate::comments::swatch_grid(ui, Some(app.fill_text_color)) {
-            app.fill_text_color = c;
-            ui.close();
-        }
-    })
-    .response
-    .on_hover_text(tl!("Text colour"));
-    let after = (app.fill_text_size, app.fill_text_bold, app.fill_text_italic, app.fill_text_color);
-    if after != before {
-        apply_format(app, before, after);
-    }
+/// Where the floating format box was drawn last frame, so clicking it doesn't count as clicking
+/// away from the text being typed.
+fn format_box_id() -> egui::Id {
+    egui::Id::new("fill-format-box-rect")
 }
 
-type FormatState = (f64, bool, bool, [f64; 3]);
-
-/// Carry a toolbar change over to the open type box and to a selected typed-text annotation.
-fn apply_format(app: &mut crate::PdfCraftApp, before: FormatState, after: FormatState) {
-    let Some((index, id)) = app.active_ids() else { return };
-    let Some(view) = app.views.get_mut(index) else { return };
-    if let Some(tb) = view.fill_text.as_mut() {
-        (tb.size, tb.bold, tb.italic, tb.color) = after;
+/// The small box above typed text (or a selected typed-text item) with its size (- / +), bold,
+/// italic and colour. A change applies to the text being typed or, for a selected item, comes back
+/// as an edit, and becomes the look of the next text typed.
+pub(crate) fn format_popup(
+    ctx: &egui::Context,
+    view: &mut DocView,
+    info: &DocInfo,
+    doc: &pdfcraft_engine::Document,
+    fmt: &mut TextFormat,
+    selection_ok: bool,
+) -> Option<Edit> {
+    ctx.data_mut(|d| d.insert_temp(format_box_id(), egui::Rect::NOTHING));
+    // (what is being formatted, its current look, where the box hangs from)
+    let (selected, current, anchor) = if let Some(tb) = view.fill_text.as_ref() {
+        let xf = view.page_xform(tb.page)?;
+        let v = info.pages.get(tb.page)?.user_to_view(tb.at[0] as f32, tb.at[1] as f32);
+        (None, TextFormat { size: tb.size, bold: tb.bold, italic: tb.italic, color: tb.color }, xf.norm_to_screen(v[0] / xf.pw, v[1] / xf.ph))
+    } else if selection_ok && let Some((page, index)) = view.comments.selected {
+        let a = info.annotations.iter().find(|a| a.page == page && a.index == index && a.subtype == "FreeText" && a.fill_sign && !a.locked)?;
+        if !doc.allows_annotation() {
+            return None;
+        }
+        let props = doc.comment_props(page, index)?;
+        let (bold, italic) = props.text_style?;
+        let xf = view.page_xform(page)?;
+        let p = info.pages.get(page)?;
+        let corner = |x: f32, y: f32| {
+            let v = p.user_to_view(x, y);
+            xf.norm_to_screen(v[0] / xf.pw, v[1] / xf.ph)
+        };
+        let (a0, a1) = (corner(a.rect[0], a.rect[1]), corner(a.rect[2], a.rect[3]));
+        let current = TextFormat { size: props.font_size?, bold, italic, color: props.color.unwrap_or(TextFormat::BLACK) };
+        (Some((page, index)), current, pos2(a0.x.min(a1.x), a0.y.min(a1.y)))
+    } else {
+        return None;
+    };
+    let mut new = current;
+    let shown = egui::Area::new(egui::Id::new(("fill-format", view.id.0)))
+        .order(egui::Order::Foreground)
+        .pivot(egui::Align2::LEFT_BOTTOM)
+        .fixed_pos(anchor - vec2(0.0, 6.0))
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.button("\u{2212}").on_hover_text(tl!("Decrease font size")).clicked() {
+                        new.size = step_text_size(new.size, false);
+                    }
+                    ui.label(format!("{} pt", new.size.round()));
+                    if ui.button("+").on_hover_text(tl!("Increase font size")).clicked() {
+                        new.size = step_text_size(new.size, true);
+                    }
+                    if ui.selectable_label(new.bold, egui::RichText::new("B").strong()).on_hover_text(tl!("Bold")).clicked() {
+                        new.bold = !new.bold;
+                    }
+                    if ui.selectable_label(new.italic, egui::RichText::new("I").italics()).on_hover_text(tl!("Italic")).clicked() {
+                        new.italic = !new.italic;
+                    }
+                    let [r, g, b] = new.color.map(|x| (x.clamp(0.0, 1.0) * 255.0).round() as u8);
+                    ui.menu_button(egui::RichText::new("A").strong().underline().color(Color32::from_rgb(r, g, b)), |ui| {
+                        if let Some(c) = crate::comments::swatch_grid(ui, Some(new.color)) {
+                            new.color = c;
+                            ui.close();
+                        }
+                    })
+                    .response
+                    .on_hover_text(tl!("Text colour"));
+                });
+            });
+        });
+    ctx.data_mut(|d| d.insert_temp(format_box_id(), shown.response.rect));
+    if new == current {
+        return None;
     }
-    let Some((page, annotation)) = view.comments.selected else { return };
-    let Some(doc) = app.session.get(id) else { return };
-    let selected_text = doc.allows_annotation()
-        && doc.info.annotations.iter().any(|a| a.page == page && a.index == annotation && a.subtype == "FreeText" && a.fill_sign && !a.locked);
-    let Some((was_bold, was_italic)) = doc.comment_props(page, annotation).and_then(|p| p.text_style).filter(|_| selected_text) else {
-        return;
+    *fmt = new;
+    let Some((page, index)) = selected else {
+        if let Some(tb) = view.fill_text.as_mut() {
+            (tb.size, tb.bold, tb.italic, tb.color) = (new.size, new.bold, new.italic, new.color);
+        }
+        return None;
     };
     let mut edits = Vec::new();
-    if after.0 != before.0 {
-        edits.push(Edit::FontSizeAnnotation { page, index: annotation, size: after.0 });
+    if new.size != current.size {
+        edits.push(Edit::FontSizeAnnotation { page, index, size: new.size });
     }
-    if (after.1, after.2) != (before.1, before.2) && (after.1, after.2) != (was_bold, was_italic) {
-        edits.push(Edit::TextStyleAnnotation { page, index: annotation, bold: after.1, italic: after.2 });
+    if (new.bold, new.italic) != (current.bold, current.italic) {
+        edits.push(Edit::TextStyleAnnotation { page, index, bold: new.bold, italic: new.italic });
     }
-    if after.3 != before.3 {
-        edits.push(Edit::StyleAnnotation { page, index: annotation, color: Some(after.3), opacity: None, width: None, endings: None });
+    if new.color != current.color {
+        edits.push(Edit::StyleAnnotation { page, index, color: Some(new.color), opacity: None, width: None, endings: None });
     }
-    let edit = match edits.len() {
-        0 => return,
-        1 => edits.remove(0),
-        _ => Edit::Batch { label: "Format text".into(), edits },
-    };
-    app.apply_edit(edit);
+    match edits.len() {
+        0 => None,
+        1 => edits.pop(),
+        _ => Some(Edit::Batch { label: "Format text".into(), edits }),
+    }
 }
 
 /// The in-place editor for typed text. Returns the edit once committed.
@@ -854,7 +890,17 @@ pub(crate) fn type_box(ctx: &egui::Context, view: &mut DocView, info: &DocInfo, 
         if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
             cancel = true;
         } else if r.lost_focus() {
-            commit = true;
+            // Clicking the format box above the text is not clicking away from it.
+            let in_box = ui
+                .ctx()
+                .data(|d| d.get_temp::<egui::Rect>(format_box_id()))
+                .zip(ui.input(|i| i.pointer.interact_pos()))
+                .is_some_and(|(rect, p)| rect.contains(p));
+            if in_box {
+                r.request_focus();
+            } else {
+                commit = true;
+            }
         }
     });
     if cancel {
