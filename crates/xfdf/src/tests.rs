@@ -2539,7 +2539,7 @@ fn copied_marks_and_text_boxes_show_what_they_are_while_placed_and_once_pasted()
 fn copies_keep_their_intent_cloud_and_pdfcraft_keys() {
     let mut src = blank();
     let meta = |id: &str| Meta { date: Some("D:20261023120000Z".into()), id: id.into() };
-    let typed = Shape::Typewriter { rect: [50.0, 500.0, 150.0, 520.0], font_size: 12.0 };
+    let typed = Shape::Typewriter { rect: [50.0, 500.0, 150.0, 520.0], font_size: 12.0, bold: false, italic: false };
     let cloud = Shape::Polygon { vertices: vec![[200.0, 200.0], [300.0, 200.0], [250.0, 280.0]], cloud: true };
     let square = Shape::Rectangle { rect: [100.0, 100.0, 180.0, 160.0] };
     for (shape, id) in [(typed, "t1"), (cloud, "c1"), (square, "s1")] {

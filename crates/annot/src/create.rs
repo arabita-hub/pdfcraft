@@ -394,7 +394,11 @@ pub fn add_annotation(doc: &mut Document, new: &NewAnnotation, meta: &Meta) -> R
                 d.set(b"IT".to_vec(), Object::name("FreeTextTypeWriter"));
             }
             let size = if font_size.is_finite() && *font_size > 0.0 { font_size.clamp(1.0, 400.0) } else { 12.0 };
-            d.set(b"DA".to_vec(), free_text_da(style.color, style.border_color, size));
+            let (bold, italic) = match &new.shape {
+                Shape::Typewriter { bold, italic, .. } => (*bold, *italic),
+                _ => (false, false),
+            };
+            d.set(b"DA".to_vec(), free_text_da(style.color, style.border_color, size, bold, italic));
             d.set(b"Q".to_vec(), Object::Int(0));
             if let Some(f) = style.fill {
                 d.set(b"C".to_vec(), rgb(f));

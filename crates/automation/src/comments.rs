@@ -570,6 +570,10 @@ impl Automation {
         if requested_size.is_some() && !matches!(kind, "text" | "date") {
             return Err(ToolError::InvalidArgs("font_size is only for type text or date".into()));
         }
+        let (bold, italic) = (a.opt_bool("bold")?.unwrap_or(false), a.opt_bool("italic")?.unwrap_or(false));
+        if (bold || italic) && !matches!(kind, "text" | "date") {
+            return Err(ToolError::InvalidArgs("bold and italic are only for type text or date".into()));
+        }
         let size = requested_size.unwrap_or(10.0);
         if !(4.0..=300.0).contains(&size) {
             return Err(ToolError::InvalidArgs("font_size must be 4–300 pt".into()));
@@ -619,13 +623,15 @@ impl Automation {
         // A circle goes around the text, so its box is no wider than the text needs.
         let min_width = if border_shape == Some(BorderShape::Circle) { 0.0 } else { 20.0 };
         let text_at = |t: &str| {
-            let longest = t.lines().map(|line| pdfcraft_engine::annot_text::text_width(line, size)).fold(0.0, f64::max);
+            // Bold runs wider than the regular widths measured here.
+            let k = if bold { 1.08 } else { 1.0 };
+            let longest = t.lines().map(|line| pdfcraft_engine::annot_text::text_width(line, size) * k).fold(0.0, f64::max);
             let w = (longest + 8.0).clamp(min_width, 600.0);
-            let rows = pdfcraft_engine::annot_text::wrap(t, size, w - 4.0).len().max(1);
+            let rows = pdfcraft_engine::annot_text::wrap(t, size * k, w - 4.0).len().max(1);
             let h = rows as f64 * size * 1.2 + 6.0;
             let [x0, y0, x1, y1] = pdfcraft_engine::text_box_at(i64::from(info.rotation), at, w, h).unwrap_or([at[0], at[1] - h, at[0] + w, at[1]]);
             // A border goes around the box, so the text sits where it would without one.
-            Shape::Typewriter { rect: [x0 - border, y0 - border, x1 + border, y1 + border], font_size: size }
+            Shape::Typewriter { rect: [x0 - border, y0 - border, x1 + border, y1 + border], font_size: size, bold, italic }
         };
         let (shape, contents) = match kind {
             "text" => {
@@ -763,6 +769,15 @@ impl Automation {
             }
             edits.push(Edit::FontSizeAnnotation { page, index, size });
         }
+        let (bold, italic) = (a.opt_bool("bold")?, a.opt_bool("italic")?);
+        if bold.is_some() || italic.is_some() {
+            // Only the one given changes; the other keeps the comment's current face.
+            let current = self.doc(a)?.comment_props(page, index).and_then(|p| p.text_style);
+            let Some((was_bold, was_italic)) = current else {
+                return Err(ToolError::InvalidArgs("bold and italic are only for a text box, typewriter text or callout".into()));
+            };
+            edits.push(Edit::TextStyleAnnotation { page, index, bold: bold.unwrap_or(was_bold), italic: italic.unwrap_or(was_italic) });
+        }
         if let Some(r) = a.nums::<4>("rect")? {
             // The rectangle as comment_list reports it: where the comment is drawn.
             let doc = self.doc(a)?;
@@ -790,7 +805,7 @@ impl Automation {
         }
         if edits.is_empty() {
             return Err(ToolError::InvalidArgs(
-                "nothing to change: pass contents, color, opacity, fill_opacity, text_opacity, width, fill, border_color, border_shape, font_size, rect, move or points".into(),
+                "nothing to change: pass contents, color, opacity, fill_opacity, text_opacity, width, fill, border_color, border_shape, font_size, bold, italic, rect, move or points".into(),
             ));
         }
         let edit = if edits.len() == 1 { edits.remove(0) } else { Edit::Batch { label: "Edit comment".into(), edits } };

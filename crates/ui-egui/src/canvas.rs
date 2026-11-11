@@ -734,6 +734,8 @@ pub struct DocView {
     pub marquee_done: Option<crate::zoom_snap::Marquee>,
     /// Fill & Sign text being typed.
     pub fill_text: Option<crate::fill_sign::TypeBox>,
+    /// A look picked in the floating format box, for the app to keep for the next text.
+    pub(crate) fill_look: Option<crate::fill_sign::TextFormat>,
     /// A queued Fill & Sign signature: select it after its edit succeeds, then leave placement.
     pub(crate) fill_signature_page: Option<usize>,
     pub(crate) signature_drag: crate::signature_drag::SignatureDrag,
@@ -1139,6 +1141,7 @@ impl DocView {
             marquee: None,
             marquee_done: None,
             fill_text: None,
+            fill_look: None,
             fill_signature_page: None,
             signature_drag: Default::default(),
             cursor: Default::default(),
@@ -1342,6 +1345,8 @@ struct PageEnv<'a> {
     y_shift: f32,
     fill_text_size: f64,
     fill_text_color: [f64; 3],
+    fill_text_bold: bool,
+    fill_text_italic: bool,
     fill_text_border: crate::fill_sign::TextBorder,
     today: (i64, u32, u32),
     can_paste_image: bool,
@@ -2745,6 +2750,10 @@ fn frame_overlays(ui: &mut egui::Ui, view: &mut DocView, env: &PageEnv<'_>, prim
     if let Some(e) = crate::fill_sign::type_box(ui.ctx(), view, info, author) {
         view.pending_edit = Some(e);
     }
+    let selection_ok = matches!(tool, QuickTool::Select | QuickTool::Fill(_)) && can_modify;
+    if let Some(e) = crate::fill_sign::format_popup(ui.ctx(), view, info, doc, selection_ok) {
+        view.pending_edit = Some(e);
+    }
     let (typed, text_done) = crate::content_ui::editor(ui.ctx(), view, info, added);
     if typed.is_some() {
         view.pending_edit = typed;
@@ -3273,6 +3282,8 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         y_shift,
         fill_text_size: app.fill_text_size,
         fill_text_color: app.fill_text_color,
+        fill_text_bold: app.fill_text_bold,
+        fill_text_italic: app.fill_text_italic,
         fill_text_border: crate::fill_sign::TextBorder {
             width: app.fill_text_border,
             color: app.fill_text_border_color,
@@ -3342,6 +3353,12 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     plan_renders(ui, view, info, out.inner, &RenderPlan { visible_pages: &visible_pages, tag, scale, sharp_held, pan_held, hand });
 
     let text_done = frame_overlays(ui, view, &env, primary_down, hover_text);
+    // The floating format box's pick is how the next Fill & Sign text looks too.
+    if let Some(look) = view.fill_look.take() {
+        app.fill_text_size = look.size;
+        app.fill_text_color = look.color;
+        (app.fill_text_bold, app.fill_text_italic) = (look.bold, look.italic);
+    }
     if let Some(why) = view.objects.notice.take() {
         refused = Some(why);
     }

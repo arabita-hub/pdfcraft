@@ -1530,6 +1530,8 @@ fn saving_flattens_fill_and_sign_only_when_the_preference_is_on() {
         size: 10.0,
         color: [0.0; 3],
         border: pdfcraft_ui_egui::fill_sign::TextBorder::NONE,
+        bold: false,
+        italic: false,
         focus: false,
     });
     let kept = dir.join("kept.pdf");
@@ -1549,6 +1551,8 @@ fn saving_flattens_fill_and_sign_only_when_the_preference_is_on() {
         size: 10.0,
         color: [0.0; 3],
         border: pdfcraft_ui_egui::fill_sign::TextBorder::NONE,
+        bold: false,
+        italic: false,
         focus: false,
     });
     app.flatten_fill_sign_on_save = true;

@@ -49,6 +49,7 @@ pub(crate) fn n(v: f64) -> String {
 pub(crate) fn rich_text(d: &mut Dict) {
     let text = d.get(b"Contents").and_then(|c| c.as_string()).map(PdfString::to_text).unwrap_or_default();
     let (col, size) = appearance::parse_da(d);
+    let (bold, italic) = appearance::da_face(d);
     let hex = format!(
         "#{:02X}{:02X}{:02X}",
         (col[0].clamp(0.0, 1.0) * 255.0).round() as u8,
@@ -63,13 +64,16 @@ pub(crate) fn rich_text(d: &mut Dict) {
     let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
     let body: String = text.split('\n').map(|line| format!("<p dir=\"ltr\">{}</p>", esc(line.trim_end_matches('\r')))).collect();
     let style = format!(
-        "font-size:{}pt;text-align:{align};color:{hex};font-weight:normal;font-style:normal;font-family:Helvetica;font-stretch:normal",
-        n(size)
+        "font-size:{}pt;text-align:{align};color:{hex};font-weight:{};font-style:{};font-family:Helvetica;font-stretch:normal",
+        n(size),
+        if bold { "bold" } else { "normal" },
+        if italic { "italic" } else { "normal" }
     );
     let rc = format!(
         "<?xml version=\"1.0\"?><body xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:xfa=\"http://www.xfa.org/schema/xfa-data/1.0/\" xfa:spec=\"2.0.2\" style=\"{style}\">{body}</body>"
     );
-    d.set(b"DS".to_vec(), PdfString::text(&format!("font: Helvetica {}pt; text-align:{align}; color:{hex}", n(size))));
+    let face = format!("{}{}", if italic { "italic " } else { "" }, if bold { "bold " } else { "" });
+    d.set(b"DS".to_vec(), PdfString::text(&format!("font: {face}Helvetica {}pt; text-align:{align}; color:{hex}", n(size))));
     d.set(b"RC".to_vec(), PdfString::text(&rc));
 }
 
@@ -228,6 +232,7 @@ fn fitted_box(doc: &Document, r: ObjRef, text: &str) -> Option<[f64; 4]> {
     let d = annot_dict(doc, r);
     let nums = |key: &[u8]| -> Option<Vec<f64>> { d.get(key)?.as_array()?.iter().map(|o| o.as_f64()).collect() };
     let (_, size) = appearance::parse_da(&d);
+    let k = appearance::bold_width_factor(appearance::da_face(&d).0);
     let pad = 2.0 + border_width_of(&d);
     let rect = nums(b"Rect").filter(|v| v.len() == 4 && v.iter().all(|x| x.is_finite()))?;
     let rect = [rect[0], rect[1], rect[2], rect[3]];
@@ -245,10 +250,10 @@ fn fitted_box(doc: &Document, r: ObjRef, text: &str) -> Option<[f64; 4]> {
         w
     } else {
         // No usable old width: fall back to the creation-time width (at most 300 pt).
-        let longest = text.lines().map(|l| appearance::text_width(l, size)).fold(0.0, f64::max);
+        let longest = text.lines().map(|l| appearance::text_width(l, size) * k).fold(0.0, f64::max);
         (longest + 2.0 * pad + 4.0).clamp(40.0, 300.0)
     };
-    let height = appearance::text_lines_height(&appearance::wrap(text, size, (w - 2.0 * pad).max(1.0)), size);
+    let height = appearance::text_lines_height(&appearance::wrap(text, size * k, (w - 2.0 * pad).max(1.0)), size);
     Some([x0, top - height - 2.0 * pad - 2.0, x0 + w, top])
 }
 
@@ -879,7 +884,8 @@ fn style_one(doc: &mut Document, r: ObjRef, change: StyleChange, meta: &Meta) ->
         if let Some(c) = color {
             if free_text {
                 let (_, size) = appearance::parse_da(d);
-                d.set(b"DA".to_vec(), free_text_da(c, appearance::da_border(d), size));
+                let (bold, italic) = appearance::da_face(d);
+                d.set(b"DA".to_vec(), free_text_da(c, appearance::da_border(d), size, bold, italic));
                 rich_text(d);
             } else {
                 d.set(b"C".to_vec(), rgb(c));
@@ -919,11 +925,12 @@ fn style_one(doc: &mut Document, r: ObjRef, change: StyleChange, meta: &Meta) ->
 }
 
 /// A FreeText's `/DA`: the text colour, the border's own colour when it has one (the stroking
-/// colour, `RG`), Helvetica at `size`.
-pub(crate) fn free_text_da(text: Rgb, border: Option<Rgb>, size: f64) -> PdfString {
+/// colour, `RG`), Helvetica (bold and/or italic, as [`appearance::da_face`] reads back) at `size`.
+pub(crate) fn free_text_da(text: Rgb, border: Option<Rgb>, size: f64, bold: bool, italic: bool) -> PdfString {
     let [r, g, b] = text.map(|x| x.clamp(0.0, 1.0));
     let stroke = border.map(|c| c.map(|x| x.clamp(0.0, 1.0))).map(|[r, g, b]| format!("{} {} {} RG ", n(r), n(g), n(b))).unwrap_or_default();
-    PdfString::literal(format!("{} {} {} rg {stroke}/Helv {} Tf", n(r), n(g), n(b), n(size)).into_bytes())
+    let (font, _) = appearance::face_names(bold, italic);
+    PdfString::literal(format!("{} {} {} rg {stroke}/{font} {} Tf", n(r), n(g), n(b), n(size)).into_bytes())
 }
 
 /// Give a text box, typewriter text or callout a border colour of its own (`None`: the text's
@@ -942,7 +949,8 @@ pub fn set_border_color(doc: &mut Document, page: usize, index: usize, color: Op
     let before = d;
     doc.update_dict(r, |d| {
         let (text, size) = appearance::parse_da(d);
-        d.set(b"DA".to_vec(), free_text_da(text, color, size));
+        let (bold, italic) = appearance::da_face(d);
+        d.set(b"DA".to_vec(), free_text_da(text, color, size, bold, italic));
         rich_text(d);
         touch(d, meta);
     })?;
@@ -967,10 +975,39 @@ pub fn set_font_size(doc: &mut Document, page: usize, index: usize, size: f64, m
     let before = d;
     doc.update_dict(r, |d| {
         let (col, _) = appearance::parse_da(d);
-        d.set(b"DA".to_vec(), free_text_da(col, appearance::da_border(d), size));
+        let (bold, italic) = appearance::da_face(d);
+        d.set(b"DA".to_vec(), free_text_da(col, appearance::da_border(d), size, bold, italic));
         rich_text(d);
         touch(d, meta);
     })?;
+    refit_text_box(doc, r, snug, before, meta)
+}
+
+/// Make a text box, typewriter text or callout bold and/or italic (its `/DA` names the Helvetica
+/// face; the rich-text strings follow) and redraw it. The box grows to hold the wrapped text, as
+/// [`set_font_size`] does.
+pub fn set_text_style(doc: &mut Document, page: usize, index: usize, bold: bool, italic: bool, meta: &Meta) -> Result<(), AnnotError> {
+    let (_, r) = annot_ref(doc, page, index)?;
+    unlocked(doc, r)?;
+    let d = annot_dict(doc, r);
+    if d.name(b"Subtype") != Some(b"FreeText") {
+        return Err(AnnotError::Invalid("only text boxes, typewriter text and callouts can be bold or italic".into()));
+    }
+    refuse_foreign_text(doc, &d)?;
+    let snug = is_snug(&d);
+    let before = d;
+    doc.update_dict(r, |d| {
+        let (col, size) = appearance::parse_da(d);
+        d.set(b"DA".to_vec(), free_text_da(col, appearance::da_border(d), size, bold, italic));
+        rich_text(d);
+        touch(d, meta);
+    })?;
+    refit_text_box(doc, r, snug, before, meta)
+}
+
+/// After a `/DA` change: grow the box to hold its text (a snug circle stays snug), or just redraw
+/// it; restores `before` if that fails.
+fn refit_text_box(doc: &mut Document, r: ObjRef, snug: bool, before: Dict, meta: &Meta) -> Result<(), AnnotError> {
     let text = text_value(doc, &annot_dict(doc, r), b"Contents").unwrap_or_default();
     let result = match (snug, if snug { snug_refit(doc, r) } else { fitted_box(doc, r, &text) }) {
         // A circle snug around its text stays snug around it at the new size.

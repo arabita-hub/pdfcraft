@@ -3962,7 +3962,7 @@ fn edit_composer_preserves_only_typewriter_whitespace(kind: u8) {
         for page in 0..2 {
             let typewriter = if page == 0 { kind != 0 } else { kind == 0 };
             let shape = if typewriter {
-                Shape::Typewriter { rect: [40.0, 40.0, 180.0, 90.0], font_size: 10.0 }
+                Shape::Typewriter { rect: [40.0, 40.0, 180.0, 90.0], font_size: 10.0, bold: false, italic: false }
             } else if kind == 2 {
                 Shape::Note { at: [80.0, 80.0], icon: NoteIcon::Comment }
             } else {

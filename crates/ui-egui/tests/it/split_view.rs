@@ -235,6 +235,8 @@ fn split_again_or_closing_a_panes_last_tab_ends_split_view() {
         size: 10.0,
         color: [0.0; 3],
         border: Default::default(),
+        bold: false,
+        italic: false,
         focus: false,
     };
     h.state_mut().views[second].fill_text = Some(typed);

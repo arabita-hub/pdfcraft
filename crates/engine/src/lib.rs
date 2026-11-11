@@ -95,6 +95,7 @@ pub use pdfcraft_edit::added::{
     text_width as added_text_width,
 };
 pub use pdfcraft_edit::paragraph_align;
+pub use pdfcraft_edit::text::set_line_editing;
 pub use pdfcraft_edit::{
     Added, AddedImage, AddedText, Align as TextAlign, Background, Content as AddedContent, Family as FontFamily, Hairlines, HairlinesFixed,
     HeaderFooter, Ink as TextInk, MarkKind, Watermark,

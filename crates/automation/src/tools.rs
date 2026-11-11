@@ -1051,7 +1051,7 @@ pub fn tools() -> Vec<ToolDef> {
                 json!({ "doc": doc(), "sort": { "type": "string", "enum": ["page", "author", "date", "type"] }, "out": save_out, "open": open }),
                 &["doc"],
             )),
-        t("comment_edit", "Edit a comment", "Change a comment's text, colour, opacity (the whole comment's, or its fill's and text's own), line width, font size (text box/typewriter/callout), fill (rectangle/oval/polygon/text box/callout; \"none\" removes it), border colour (`border_color`, text box/typewriter/callout; \"text\" gives it the text's colour again), rectangle (rectangle/oval/text box/stamp), position (`move` [dx, dy] in points) or shape (`points`: a line's two ends, or the corners of connected lines, a polygon or a cloud). Stamps keep their original appearance when resized. One undo step.").with(schema(
+        t("comment_edit", "Edit a comment", "Change a comment's text, colour, opacity (the whole comment's, or its fill's and text's own), line width, font size and bold/italic (text box/typewriter/callout), fill (rectangle/oval/polygon/text box/callout; \"none\" removes it), border colour (`border_color`, text box/typewriter/callout; \"text\" gives it the text's colour again), rectangle (rectangle/oval/text box/stamp), position (`move` [dx, dy] in points) or shape (`points`: a line's two ends, or the corners of connected lines, a polygon or a cloud). Stamps keep their original appearance when resized. One undo step.").with(schema(
             comment_ref(json!({
                 "contents": { "type": "string" },
                 "color": color(),
@@ -1063,6 +1063,8 @@ pub fn tools() -> Vec<ToolDef> {
                 "border_color": { "type": "string", "description": "A text box's, typewriter text's or callout's border colour: #RRGGBB, a colour name, or \"text\" for the text's colour." },
                 "border_shape": { "type": "string", "enum": ["rectangle", "oval", "circle"], "description": "A text box's or typewriter text's border shape: an oval or a circle goes around the text, which keeps its place." },
                 "font_size": { "type": "number", "minimum": 1, "maximum": 400, "description": "Font size in points of a text box, typewriter text or callout; the box grows to hold the text." },
+                "bold": { "type": "boolean", "description": "Make a text box, typewriter text or callout bold (or not); the other of bold/italic keeps its current setting." },
+                "italic": { "type": "boolean", "description": "Make a text box, typewriter text or callout italic (or not)." },
                 "rect": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
                 "move": point(),
                 "points": { "type": "array", "items": point(), "minItems": 2, "description": "A line's two ends, or every corner of connected lines, a polygon or a cloud, in page coordinates." },
@@ -1530,6 +1532,8 @@ pub fn tools() -> Vec<ToolDef> {
                 "at": point(),
                 "text": { "type": "string", "minLength": 1 },
                 "font_size": { "type": "number", "minimum": 4, "maximum": 300, "description": "For type text or date (default 10 pt)." },
+                "bold": { "type": "boolean", "description": "For type text or date: bold (default false)." },
+                "italic": { "type": "boolean", "description": "For type text or date: italic (default false)." },
                 "color": color(),
                 "border": { "type": "number", "minimum": 0, "maximum": 12, "description": "For type text or date: a border around it in points, in the text's colour (default 0, none)." },
                 "border_color": { "type": "string", "description": "With border: its own colour, #RRGGBB or a colour name." },

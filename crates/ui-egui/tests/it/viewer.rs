@@ -1224,6 +1224,8 @@ fn the_window_title_marks_a_draft_that_is_not_applied_yet() {
         size: 10.0,
         color: [0.0; 3],
         border: pdfcraft_ui_egui::fill_sign::TextBorder::NONE,
+        bold: false,
+        italic: false,
         focus: false,
     });
     h.run_steps(2);

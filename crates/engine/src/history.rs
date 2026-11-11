@@ -71,6 +71,7 @@ pub(crate) fn scope_of(edit: &Edit) -> Scope {
         | Edit::FillAnnotation { .. }
         | Edit::PartOpacity { .. }
         | Edit::FontSizeAnnotation { .. }
+        | Edit::TextStyleAnnotation { .. }
         | Edit::BorderColorAnnotation { .. }
         | Edit::BorderShapeAnnotation { .. }
         | Edit::SetAnnotationInfo { .. } => Scope::Comments,

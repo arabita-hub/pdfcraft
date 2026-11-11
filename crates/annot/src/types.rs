@@ -394,6 +394,8 @@ pub enum Shape {
     Typewriter {
         rect: [f64; 4],
         font_size: f64,
+        bold: bool,
+        italic: bool,
     },
     /// A Fill & Sign mark in `rect`.
     Mark {

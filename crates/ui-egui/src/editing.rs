@@ -893,7 +893,7 @@ impl PdfCraftApp {
         }
         let author = self.comment_prefs.author.clone();
         let rotation = self.session.get(id).map_or(0, |doc| crate::comments::page_rotation(&doc.info, tb.page));
-        let look = crate::fill_sign::TypedLook { color: tb.color, border: tb.border };
+        let look = crate::fill_sign::TypedLook { color: tb.color, border: tb.border, bold: tb.bold, italic: tb.italic };
         let edit = crate::fill_sign::typed_with(tb.page, tb.at, &text, tb.size, rotation, &author, look);
         if self.apply_edit(edit) {
             if let Some(view) = self.views.get_mut(i) {
@@ -1022,6 +1022,7 @@ fn comment_page(edit: &Edit) -> Option<usize> {
         | Edit::FillAnnotation { page, .. }
         | Edit::PartOpacity { page, .. }
         | Edit::FontSizeAnnotation { page, .. }
+        | Edit::TextStyleAnnotation { page, .. }
         | Edit::BorderColorAnnotation { page, .. }
         | Edit::BorderShapeAnnotation { page, .. }
         | Edit::SetAnnotationInfo { page, .. } => Some(*page),

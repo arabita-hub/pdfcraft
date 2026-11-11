@@ -486,7 +486,7 @@ fn text_boxes_take_an_oval_or_a_circle_around_their_text() {
     // Where the text starts: its first line's text matrix.
     let text_at = |doc: &Document, d: &Dict| ap_content(doc, d).lines().find(|l| l.ends_with(" Tm") || l.contains(" Tm ")).map(str::to_owned);
     let mut doc = fixture();
-    let mut tw = new(0, Shape::Typewriter { rect: [100.0, 100.0, 200.0, 120.0], font_size: 10.0 });
+    let mut tw = new(0, Shape::Typewriter { rect: [100.0, 100.0, 200.0, 120.0], font_size: 10.0, bold: false, italic: false });
     tw.style.width = 1.0;
     let t = add_annotation(&mut doc, &tw, &meta("t")).unwrap();
     // In an oval or a circle the text is centred in its text box (left-aligned in a box): one
@@ -576,7 +576,7 @@ fn a_circle_goes_snug_around_its_text_and_follows_it() {
     // "3" at 10 pt with a 1 pt border, in the box Fill & Sign sizes to it: the digit with 2 pt of
     // padding and 4 pt to spare across, a line and 6 pt down, the border around that.
     let w3 = appearance::text_width("3", 10.0);
-    let mut typed = new(0, Shape::Typewriter { rect: [100.0, 680.0, 110.0 + w3, 700.0], font_size: 10.0 });
+    let mut typed = new(0, Shape::Typewriter { rect: [100.0, 680.0, 110.0 + w3, 700.0], font_size: 10.0, bold: false, italic: false });
     (typed.contents, typed.style.width, typed.style.border_shape) = ("3".into(), 1.0, BorderShape::Circle);
     let t = add_annotation(&mut doc, &typed, &meta("t")).unwrap();
     let frame = |doc: &Document| {
@@ -589,7 +589,7 @@ fn a_circle_goes_snug_around_its_text_and_follows_it() {
     // The text box Fill & Sign gives a box to type into, 40 pt wide: a circle goes snug around its
     // text there too.
     let mut wide = typed.clone();
-    wide.shape = Shape::Typewriter { rect: [300.0, 680.0, 342.0, 700.0], font_size: 10.0 };
+    wide.shape = Shape::Typewriter { rect: [300.0, 680.0, 342.0, 700.0], font_size: 10.0, bold: false, italic: false };
     wide.style.border_shape = BorderShape::Rectangle;
     let b = add_annotation(&mut doc, &wide, &meta("b")).unwrap();
     set_border_shape(&mut doc, 0, b, BorderShape::Circle, &meta("")).unwrap();
@@ -664,7 +664,7 @@ fn a_circle_touching_its_text_box_keeps_following_its_text() {
 fn a_circle_made_on_a_turned_page_is_sized_as_on_an_upright_one() {
     let w = appearance::text_width("12345", 10.0);
     let typed = |rect: [f64; 4]| {
-        let mut t = new(0, Shape::Typewriter { rect, font_size: 10.0 });
+        let mut t = new(0, Shape::Typewriter { rect, font_size: 10.0, bold: false, italic: false });
         (t.contents, t.style.width, t.style.border_shape) = ("12345".into(), 1.0, BorderShape::Circle);
         t
     };
@@ -974,7 +974,7 @@ fn fill_and_sign_items_are_drawn() {
         let style = Style::default_for(&shape);
         add_annotation(doc, &NewAnnotation { page: 1, shape, style, contents: contents.into(), author: "Ada".into() }, &meta("x")).unwrap()
     };
-    let t = add(&mut doc, Shape::Typewriter { rect: [100.0, 700.0, 200.0, 716.0], font_size: 11.0 }, "Ada Lovelace");
+    let t = add(&mut doc, Shape::Typewriter { rect: [100.0, 700.0, 200.0, 716.0], font_size: 11.0, bold: false, italic: false }, "Ada Lovelace");
     let marks: Vec<usize> = [FillMark::Check, FillMark::Cross, FillMark::Dot, FillMark::Line]
         .into_iter()
         .enumerate()
@@ -1003,7 +1003,7 @@ fn fill_and_sign_items_are_drawn() {
 #[test]
 fn a_typewriter_border_goes_around_its_text_which_stays_put() {
     let mut doc = fixture();
-    let shape = Shape::Typewriter { rect: [100.0, 700.0, 200.0, 716.0], font_size: 11.0 };
+    let shape = Shape::Typewriter { rect: [100.0, 700.0, 200.0, 716.0], font_size: 11.0, bold: false, italic: false };
     let style = Style { width: 1.0, ..Style::default_for(&shape) };
     let t = add_annotation(&mut doc, &NewAnnotation { page: 1, shape, style, contents: "Ada".into(), author: "Ada".into() }, &meta("x")).unwrap();
     // The text starts 2 pt inside the border: 100 + 1 + 2 across, 716 - 1 - 2 - 0.9 em down.
@@ -1026,7 +1026,7 @@ fn a_typewriter_border_goes_around_its_text_which_stays_put() {
     assert_eq!(rect(&list(&doc, 1)[b]), [100.0, 600.0, 200.0, 650.0], "a text box keeps the box it was drawn with");
     // Another app's typed text with its width in /Border (no /BS): 4 pt, so 2 pt shrinks the box
     // by 2 on every side, as it is drawn.
-    let shape = Shape::Typewriter { rect: [100.0, 500.0, 200.0, 530.0], font_size: 11.0 };
+    let shape = Shape::Typewriter { rect: [100.0, 500.0, 200.0, 530.0], font_size: 11.0, bold: false, italic: false };
     let o = add_annotation(
         &mut doc,
         &NewAnnotation { page: 1, style: Style::default_for(&shape), shape: shape.clone(), contents: "Bo".into(), author: "Ada".into() },
@@ -1054,7 +1054,7 @@ fn a_typewriter_border_goes_around_its_text_which_stays_put() {
 #[test]
 fn a_text_border_can_have_its_own_colour() {
     let mut doc = fixture();
-    let shape = Shape::Typewriter { rect: [100.0, 700.0, 200.0, 716.0], font_size: 11.0 };
+    let shape = Shape::Typewriter { rect: [100.0, 700.0, 200.0, 716.0], font_size: 11.0, bold: false, italic: false };
     let style = Style { color: [0.0, 0.5, 0.0], width: 1.0, border_color: Some([1.0, 0.0, 0.0]), ..Style::default_for(&shape) };
     let t = add_annotation(&mut doc, &NewAnnotation { page: 1, shape, style, contents: "Ada".into(), author: "Ada".into() }, &meta("x")).unwrap();
     let da = |doc: &Document| text(&list(doc, 1)[t], b"DA");
@@ -2379,7 +2379,7 @@ fn comment_text_the_standard_fonts_cannot_draw_is_kept_and_marked() {
     assert_eq!(text(&list(&doc, 0)[t], b"Contents"), "签名 Ada");
     assert!(ap_content(&doc, &list(&doc, 0)[t]).contains("(?? Ada)"), "{}", ap_content(&doc, &list(&doc, 0)[t]));
     assert_eq!(mark(&doc, t), Some('签'));
-    let typed = Shape::Typewriter { rect: [100.0, 700.0, 200.0, 716.0], font_size: 11.0 };
+    let typed = Shape::Typewriter { rect: [100.0, 700.0, 200.0, 716.0], font_size: 11.0, bold: false, italic: false };
     let f = add_annotation(
         &mut doc,
         &NewAnnotation { page: 0, style: Style::default_for(&typed), shape: typed, contents: "张三".into(), author: "Ada".into() },
@@ -4188,7 +4188,7 @@ fn thai_in_fill_sign_text_and_text_boxes_is_drawn_from_the_thai_face() {
     let thai = "น้ำฎู บุญ\nปั้นน้ำฎู";
     let item = |shape: Shape| NewAnnotation { page: 0, style: Style::default_for(&shape), shape, contents: thai.into(), author: "Ada".into() };
     let shapes = [
-        Shape::Typewriter { rect: [100.0, 700.0, 300.0, 716.0], font_size: 24.0 },
+        Shape::Typewriter { rect: [100.0, 700.0, 300.0, 716.0], font_size: 24.0, bold: false, italic: false },
         Shape::TextBox { rect: [100.0, 400.0, 400.0, 430.0], font_size: 30.0 },
     ];
     if pdfcraft_fonts::document_thai_font().is_none() {
@@ -4313,4 +4313,29 @@ fn summaries_list_only_usable_quads() {
     set_annots(&mut doc, page, entries).unwrap();
     let summary = summaries(&doc).into_iter().find(|a| a.page == 0 && a.index == 0).unwrap();
     assert_eq!(summary.quads, vec![QUAD.map(|v| v as f32)]);
+}
+
+#[test]
+fn bold_and_italic_change_the_da_face_and_survive_a_size_change() {
+    let mut doc = fixture();
+    let shape = Shape::Typewriter { rect: [100.0, 680.0, 220.0, 692.0], font_size: 12.0, bold: false, italic: false };
+    let t = add_annotation(&mut doc, &new(0, shape), &meta("t")).unwrap();
+    set_contents(&mut doc, 0, t, "Name", &meta("")).unwrap();
+    assert_eq!(props(&doc, 0, t).unwrap().text_style, Some((false, false)));
+    set_text_style(&mut doc, 0, t, true, true, &meta("")).unwrap();
+    // A later size change keeps the face.
+    set_font_size(&mut doc, 0, t, 14.0, &meta("")).unwrap();
+    let doc = reopen(&doc);
+    let d = &list(&doc, 0)[t];
+    assert!(text(d, b"DA").ends_with("/HeBO 14 Tf"), "{}", text(d, b"DA"));
+    assert!(text(d, b"RC").contains("font-weight:bold") && text(d, b"RC").contains("font-style:italic"));
+    assert_eq!(props(&doc, 0, t).unwrap().text_style, Some((true, true)));
+    let mut doc = doc;
+    set_text_style(&mut doc, 0, t, false, true, &meta("")).unwrap();
+    assert!(text(&list(&doc, 0)[t], b"DA").ends_with("/HeOb 14 Tf"));
+    // The appearance draws in the face it names.
+    let ap = list(&doc, 0)[t].get(b"AP").cloned();
+    assert!(ap.is_some(), "redrawn");
+    let note = add_annotation(&mut doc, &new(0, Shape::Note { at: [50.0, 50.0], icon: NoteIcon::Note }), &meta("t")).unwrap();
+    assert!(set_text_style(&mut doc, 0, note, true, false, &meta("")).is_err());
 }

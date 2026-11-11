@@ -215,6 +215,8 @@ pub struct TypeBox {
     pub text: String,
     pub size: f64,
     pub color: [f64; 3],
+    pub bold: bool,
+    pub italic: bool,
     /// The border around the text.
     pub border: TextBorder,
     pub focus: bool,
@@ -276,19 +278,24 @@ pub fn typed(page: usize, at: [f64; 2], text: &str, size: f64, rotation: i64, au
 pub struct TypedLook {
     pub color: [f64; 3],
     pub border: TextBorder,
+    pub bold: bool,
+    pub italic: bool,
 }
 
 /// [`typed`] in `look`: the colour applies to the annotation's appearance and survives saving; a
 /// border goes around the box sized to the text, so the text sits where it would without one.
 pub fn typed_with(page: usize, at: [f64; 2], text: &str, size: f64, rotation: i64, author: &str, look: TypedLook) -> Edit {
     let width = valid_text_border(look.border.width).unwrap_or(0.0);
+    // Bold runs wider than the regular widths the box is measured with, and the text is clipped
+    // to its box: measure it a little larger.
+    let measured = if look.bold { size * 1.08 } else { size };
     // A circle goes around the text, so its box is no wider than the text needs.
     let [x0, y0, x1, y1] = if width > 0.0 && look.border.shape == BorderShape::Circle {
-        crate::comments::snug_text_box_rect(at, text, size, rotation)
+        crate::comments::snug_text_box_rect(at, text, measured, rotation)
     } else {
-        crate::comments::text_box_rect(at, text, size, rotation)
+        crate::comments::text_box_rect(at, text, measured, rotation)
     };
-    let shape = Shape::Typewriter { rect: [x0 - width, y0 - width, x1 + width, y1 + width], font_size: size };
+    let shape = Shape::Typewriter { rect: [x0 - width, y0 - width, x1 + width, y1 + width], font_size: size, bold: look.bold, italic: look.italic };
     let style = Style {
         color: valid_text_color(look.color).unwrap_or([0.0; 3]),
         width,
@@ -495,6 +502,8 @@ pub(crate) struct PageInput<'a> {
     pub(crate) tool: FillTool,
     pub(crate) text_size: f64,
     pub(crate) text_color: [f64; 3],
+    pub(crate) text_bold: bool,
+    pub(crate) text_italic: bool,
     pub(crate) text_border: TextBorder,
     pub(crate) signature: Option<&'a SavedSig>,
     pub(crate) initials: Option<&'a SavedSig>,
@@ -506,7 +515,7 @@ pub(crate) struct PageInput<'a> {
 /// Preview and clicks with a Fill & Sign tool on one page.
 pub(crate) fn page_input(cx: PageToolContext<'_>, input: PageInput<'_>, free: bool, view: &mut DocView) -> Option<FillAction> {
     let PageToolContext { ui, resp, xf, ptr, page, info, .. } = cx;
-    let PageInput { tool, text_size, text_color, text_border, signature, initials, preview, author, date_text } = input;
+    let PageInput { tool, text_size, text_color, text_bold, text_italic, text_border, signature, initials, preview, author, date_text } = input;
     let pointer = ptr.within(xf.rect)?;
     let p = info.pages.get(page)?;
     let at = to_user(xf, info, page, pointer);
@@ -544,6 +553,8 @@ pub(crate) fn page_input(cx: PageToolContext<'_>, input: PageInput<'_>, free: bo
                 text: String::new(),
                 size: text_size,
                 color: text_color,
+                bold: text_bold,
+                italic: text_italic,
                 border: text_border,
                 focus: true,
             });
@@ -555,7 +566,7 @@ pub(crate) fn page_input(cx: PageToolContext<'_>, input: PageInput<'_>, free: bo
                     tb.size,
                     crate::comments::page_rotation(info, tb.page),
                     author,
-                    TypedLook { color: tb.color, border: tb.border },
+                    TypedLook { color: tb.color, border: tb.border, bold: tb.bold, italic: tb.italic },
                 )))
             })
         }
@@ -567,7 +578,7 @@ pub(crate) fn page_input(cx: PageToolContext<'_>, input: PageInput<'_>, free: bo
                 text_size,
                 rotation,
                 author,
-                TypedLook { color: text_color, border: text_border },
+                TypedLook { color: text_color, border: text_border, bold: text_bold, italic: text_italic },
             ))),
             Err(why) => FillAction::Refused(why.clone()),
         }),
@@ -599,6 +610,134 @@ pub enum FillAction {
     CreateInitials,
     /// Nothing placed, and why (today's date can't be written into the PDF yet).
     Refused(String),
+}
+
+/// The look the floating format box edits: size, weight, slant and colour.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextFormat {
+    pub size: f64,
+    pub bold: bool,
+    pub italic: bool,
+    pub color: [f64; 3],
+}
+
+/// The sizes the − / + buttons step through, like a word processor's size list.
+const TEXT_SIZE_STEPS: [f64; 20] =
+    [4.0, 6.0, 8.0, 9.0, 10.0, 11.0, 12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 28.0, 36.0, 48.0, 72.0, 96.0, 144.0, 200.0, 300.0];
+
+/// The next larger (`up`) or smaller typed-text size after `size`, staying within the allowed range.
+pub fn step_text_size(size: f64, up: bool) -> f64 {
+    let size = valid_text_size(size).unwrap_or(TEXT_SIZE);
+    let next = if up {
+        TEXT_SIZE_STEPS.iter().copied().find(|s| *s > size + 1e-6)
+    } else {
+        TEXT_SIZE_STEPS.iter().rev().copied().find(|s| *s < size - 1e-6)
+    };
+    next.unwrap_or(size).clamp(MIN_TEXT_SIZE, MAX_TEXT_SIZE)
+}
+
+/// Whether the pointer was over the floating format box last frame, so clicking it doesn't count
+/// as clicking away from the text being typed.
+fn format_box_id() -> egui::Id {
+    egui::Id::unique("fill-format-box-hovered")
+}
+
+/// The small box above typed text (or a selected Fill & Sign text) with its size (− / +), bold,
+/// italic and colour. A change applies to the text being typed or, for a selected text, comes back
+/// as an edit; either way it is left in `view.fill_look` to become the look of the next text.
+pub(crate) fn format_popup(
+    ctx: &egui::Context,
+    view: &mut DocView,
+    info: &DocInfo,
+    doc: &pdfcraft_engine::Document,
+    selection_ok: bool,
+) -> Option<Edit> {
+    ctx.data_mut(|d| d.insert_temp(format_box_id(), false));
+    // (the selected text, if that is what is formatted; its current look; where the box hangs from)
+    let (selected, current, anchor) = if let Some(tb) = view.fill_text.as_ref() {
+        let xf = view.page_xform(tb.page)?;
+        let v = info.pages.get(tb.page)?.user_to_view(tb.at[0] as f32, tb.at[1] as f32);
+        (None, TextFormat { size: tb.size, bold: tb.bold, italic: tb.italic, color: tb.color }, xf.norm_to_screen(v[0] / xf.pw, v[1] / xf.ph))
+    } else if selection_ok && let Some((page, index)) = view.comments.selected {
+        let a = info.annotations.iter().find(|a| a.page == page && a.index == index && a.subtype == "FreeText" && a.fill_sign && !a.locked)?;
+        if !doc.allows_annotation() {
+            return None;
+        }
+        let props = doc.comment_props(page, index)?;
+        let (bold, italic) = props.text_style?;
+        let xf = view.page_xform(page)?;
+        let p = info.pages.get(page)?;
+        let corner = |x: f32, y: f32| {
+            let v = p.user_to_view(x, y);
+            xf.norm_to_screen(v[0] / xf.pw, v[1] / xf.ph)
+        };
+        let (a0, a1) = (corner(a.rect[0], a.rect[1]), corner(a.rect[2], a.rect[3]));
+        let current = TextFormat { size: props.font_size?, bold, italic, color: props.color.unwrap_or([0.0; 3]) };
+        (Some((page, index)), current, pos2(a0.x.min(a1.x), a0.y.min(a1.y)))
+    } else {
+        return None;
+    };
+    let mut new = current;
+    let shown = egui::Area::new(egui::Id::unique(("fill-format", view.view_key())))
+        .fade_in(false)
+        .order(egui::Order::Foreground)
+        .pivot(egui::Align2::LEFT_BOTTOM)
+        .fixed_pos(anchor - egui::vec2(0.0, 6.0))
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.button("\u{2212}").on_hover_text(tl!("Decrease font size")).clicked() {
+                        new.size = step_text_size(new.size, false);
+                    }
+                    ui.label(format!("{} pt", new.size.round()));
+                    if ui.button("+").on_hover_text(tl!("Increase font size")).clicked() {
+                        new.size = step_text_size(new.size, true);
+                    }
+                    if ui.selectable_label(new.bold, egui::RichText::new("B").strong()).on_hover_text(tl!("Bold")).clicked() {
+                        new.bold = !new.bold;
+                    }
+                    if ui.selectable_label(new.italic, egui::RichText::new("I").italics()).on_hover_text(tl!("Italic")).clicked() {
+                        new.italic = !new.italic;
+                    }
+                    let [r, g, b] = new.color.map(|x| (x.clamp(0.0, 1.0) * 255.0).round() as u8);
+                    ui.menu_button(egui::RichText::new("A").strong().underline().color(Color32::from_rgb(r, g, b)), |ui| {
+                        if let Some(c) = crate::comments::swatch_grid(ui, Some(new.color)) {
+                            new.color = c;
+                            ui.close();
+                        }
+                    })
+                    .response
+                    .on_hover_text(tl!("Text colour"));
+                });
+            });
+        });
+    let hovered = shown.response.contains_pointer();
+    ctx.data_mut(|d| d.insert_temp(format_box_id(), hovered));
+    if new == current {
+        return None;
+    }
+    view.fill_look = Some(new);
+    let Some((page, index)) = selected else {
+        if let Some(tb) = view.fill_text.as_mut() {
+            (tb.size, tb.bold, tb.italic, tb.color) = (new.size, new.bold, new.italic, new.color);
+        }
+        return None;
+    };
+    let mut edits = Vec::new();
+    if new.size != current.size {
+        edits.push(Edit::FontSizeAnnotation { page, index, size: new.size });
+    }
+    if (new.bold, new.italic) != (current.bold, current.italic) {
+        edits.push(Edit::TextStyleAnnotation { page, index, bold: new.bold, italic: new.italic });
+    }
+    if new.color != current.color {
+        edits.push(Edit::StyleAnnotation { page, index, color: Some(new.color), opacity: None, width: None, endings: None });
+    }
+    match edits.len() {
+        0 => None,
+        1 => edits.pop(),
+        _ => Some(Edit::Batch { label: "Format text".into(), edits }),
+    }
 }
 
 /// The in-place editor for typed text. Returns the edit once committed.
@@ -681,7 +820,13 @@ pub(crate) fn type_box(ctx: &egui::Context, view: &mut DocView, info: &DocInfo, 
             if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
                 cancel = true;
             } else if r.lost_focus() {
-                commit = true;
+                // Clicking the format box above the text is not clicking away from it.
+                let in_box = ui.ctx().data(|d| d.get_temp::<bool>(format_box_id())).unwrap_or(false);
+                if in_box {
+                    r.request_focus();
+                } else {
+                    commit = true;
+                }
             }
         });
     if cancel {
@@ -691,7 +836,7 @@ pub(crate) fn type_box(ctx: &egui::Context, view: &mut DocView, info: &DocInfo, 
     if commit {
         let tb = view.fill_text.take()?;
         if !tb.text.trim().is_empty() {
-            let look = TypedLook { color: tb.color, border: tb.border };
+            let look = TypedLook { color: tb.color, border: tb.border, bold: tb.bold, italic: tb.italic };
             return Some(typed_with(tb.page, tb.at, &tb.text, tb.size, crate::comments::page_rotation(info, tb.page), author, look));
         }
     }
@@ -1026,6 +1171,17 @@ impl crate::PdfCraftApp {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn text_size_steps_stay_in_range() {
+        assert_eq!(super::step_text_size(10.0, true), 11.0);
+        assert_eq!(super::step_text_size(10.0, false), 9.0);
+        assert_eq!(super::step_text_size(10.5, true), 11.0);
+        assert_eq!(super::step_text_size(10.5, false), 10.0);
+        assert_eq!(super::step_text_size(super::MIN_TEXT_SIZE, false), super::MIN_TEXT_SIZE);
+        assert_eq!(super::step_text_size(super::MAX_TEXT_SIZE, true), super::MAX_TEXT_SIZE);
+        assert_eq!(super::step_text_size(f64::NAN, true), 11.0);
+    }
+
     #[test]
     fn undo_removes_the_last_stroke_and_skips_empty_ones() {
         let mut d = super::SigDraft { drawing: true, ..Default::default() };

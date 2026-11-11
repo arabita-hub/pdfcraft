@@ -280,6 +280,12 @@ fn changes(o: &CommentProps, e: &CommentProps, page: usize, index: usize, t: &Co
     {
         out.push(Edit::FontSizeAnnotation { page, index, size });
     }
+    if t.restylable
+        && t.font_size.is_some()
+        && let Some((bold, italic)) = e.text_style.filter(|s| Some(*s) != o.text_style)
+    {
+        out.push(Edit::TextStyleAnnotation { page, index, bold, italic });
+    }
     if t.restylable && t.font_size.is_some() && e.border_color != o.border_color {
         out.push(Edit::BorderColorAnnotation { page, index, color: e.border_color });
     }
@@ -403,6 +409,14 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> (boo
                     if let Some(size) = e.font_size.as_mut() {
                         ui.label(tl!("Font size"));
                         ui.add(egui::DragValue::new(size).range(1.0..=400.0).speed(0.5).suffix(" pt"));
+                        ui.end_row();
+                    }
+                    if let Some((bold, italic)) = e.text_style.as_mut() {
+                        ui.label(tl!("Style"));
+                        ui.horizontal(|ui| {
+                            ui.add(widgets::checkbox(bold, tl!("Bold")));
+                            ui.add(widgets::checkbox(italic, tl!("Italic")));
+                        });
                         ui.end_row();
                     }
                     // One opacity for the whole comment, or each part's of its own: a text box's

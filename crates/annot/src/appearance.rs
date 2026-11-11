@@ -440,6 +440,56 @@ pub fn parse_da(d: &Dict) -> (Rgb, f64) {
     (col.map(|x| x.clamp(0.0, 1.0)), size.min(400.0))
 }
 
+/// The Helvetica face a `/DA` names, as Acrobat's form font names do: `/Helv`, `/HeBo` (bold),
+/// `/HeOb` (italic, "oblique") and `/HeBO` (both). Anything else is regular.
+pub fn da_face(d: &Dict) -> (bool, bool) {
+    let da = d.get(b"DA").and_then(|o| o.as_string()).map(|s| String::from_utf8_lossy(&s.bytes).into_owned()).unwrap_or_default();
+    let toks: Vec<&str> = da.split_whitespace().collect();
+    let name = toks.iter().position(|t| *t == "Tf").and_then(|i| i.checked_sub(2)).and_then(|i| toks.get(i)).copied().unwrap_or("");
+    match name {
+        "/HeBo" => (true, false),
+        "/HeOb" => (false, true),
+        "/HeBO" => (true, true),
+        _ => (false, false),
+    }
+}
+
+/// The `/DA` font resource name and the standard font it is.
+pub(crate) fn face_names(bold: bool, italic: bool) -> (&'static str, &'static str) {
+    match (bold, italic) {
+        (false, false) => ("Helv", "Helvetica"),
+        (true, false) => ("HeBo", "Helvetica-Bold"),
+        (false, true) => ("HeOb", "Helvetica-Oblique"),
+        (true, true) => ("HeBO", "Helvetica-BoldOblique"),
+    }
+}
+
+/// A FreeText's face from its `/DA`: the font resource name, the standard font, and how much
+/// wider than [`text_width`] it runs.
+fn free_text_face(d: &Dict) -> (&'static str, &'static str, f64) {
+    let (bold, italic) = da_face(d);
+    let (name, base) = face_names(bold, italic);
+    (name, base, bold_width_factor(bold))
+}
+
+/// Add a Helvetica face other than the regular one (which [`helvetica_fonts`] has) to `fonts`.
+fn add_face(fonts: &mut Dict, name: &str, base: &str) {
+    if name == "Helv" {
+        return;
+    }
+    let mut font = Dict::new();
+    font.set(b"Type".to_vec(), Object::name("Font"));
+    font.set(b"Subtype".to_vec(), Object::name("Type1"));
+    font.set(b"BaseFont".to_vec(), Object::name(base));
+    font.set(b"Encoding".to_vec(), Object::name("WinAnsiEncoding"));
+    fonts.set(name.as_bytes().to_vec(), Object::Dict(font));
+}
+
+/// How much wider bold text runs than the regular-weight widths [`text_width`] approximates.
+pub(crate) fn bold_width_factor(bold: bool) -> f64 {
+    if bold { 1.08 } else { 1.0 }
+}
+
 /// How opaque a comment's parts are drawn, 0–1: its line or border (`/CA`); its fill or
 /// background (`/ca`, which PDF 2.0 gives the non-stroking operations; without it, as the line);
 /// and a text box's text (`/PCTextOpacity`, PdfCraft's own; without it, as the fill, since text
@@ -1468,8 +1518,9 @@ fn draw_free_text(context: &AppearanceContext<'_>, mut drawing: AppearanceDrawin
     if parts.text != parts.fill {
         c.push_str("/GS1 gs\n");
     }
+    let (font_name, base_font, k) = free_text_face(d);
     c.push_str(&format!(
-        "{} {} {} {} re W n\nBT\n/Helv {} Tf\n{}",
+        "{} {} {} {} re W n\nBT\n/{font_name} {} Tf\n{}",
         n(rect[0]),
         n(rect[1]),
         n(rect[2] - rect[0]),
@@ -1478,7 +1529,7 @@ fn draw_free_text(context: &AppearanceContext<'_>, mut drawing: AppearanceDrawin
         rg(text_color)
     ));
     let mut out = c.into_bytes();
-    let lines = wrap(&text, size, width);
+    let lines = wrap(&text, size * k, width);
     let mut y = rect[3] - pad - size * reach(&lines)[0];
     if round {
         y -= ((rect[3] - rect[1] - 2.0 * pad - text_lines_height(&lines, size)) / 2.0).max(0.0);
@@ -1487,19 +1538,20 @@ fn draw_free_text(context: &AppearanceContext<'_>, mut drawing: AppearanceDrawin
     // streams `apply_appearance` stores in the document); the rest, and Thai it can't draw (as
     // `?`, which `undrawable_text` reports), in Helvetica.
     let mut fonts = helvetica_fonts();
+    add_face(&mut fonts, font_name, base_font);
     let (pieces, shaped) = shaped_text::appearance_lines(&lines, &mut fonts);
     let mut current = None;
     for pieces in &pieces {
         if y < rect[1] - size {
             break;
         }
-        let lw = shaped_text::pieces_width(pieces, size, 0.0, helvetica_width);
+        let lw = shaped_text::pieces_width(pieces, size, 0.0, helvetica_width) * k;
         let x = match q {
             1 => rect[0] + pad + (width - lw) / 2.0,
             2 => rect[2] - pad - lw,
             _ => rect[0] + pad,
         };
-        shaped.show_line(&mut out, pieces, x, y, size, "Helv", win_ansi, |s| helvetica_width(s, size), &mut current);
+        shaped.show_line(&mut out, pieces, x, y, size, font_name, win_ansi, |s| helvetica_width(s, size) * k, &mut current);
         y -= size * 1.2;
     }
     out.extend_from_slice(b"ET\n");

@@ -371,6 +371,9 @@ pub struct PdfCraftApp {
     pub fill_tool: fill_sign::FillTool,
     /// Colour for new Fill & Sign text and dates, kept across launches.
     pub fill_text_color: [f64; 3],
+    /// Bold and italic for new Fill & Sign text and dates, until PdfCraft quits.
+    pub fill_text_bold: bool,
+    pub fill_text_italic: bool,
     /// Border around new Fill & Sign text and dates, in points (0: none), until PdfCraft quits:
     /// each launch starts from [`Self::fill_text_default`].
     pub fill_text_border: f64,

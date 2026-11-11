@@ -279,6 +279,13 @@ pub enum Edit {
         index: usize,
         size: f64,
     },
+    /// Make a text box, typewriter text or callout bold and/or italic.
+    TextStyleAnnotation {
+        page: usize,
+        index: usize,
+        bold: bool,
+        italic: bool,
+    },
     /// Give a text box, typewriter text or callout a border colour of its own (`None`: the
     /// text's again).
     BorderColorAnnotation {
